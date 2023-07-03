@@ -84,6 +84,10 @@ impl<F: ScalarField> OverflowInteger<F> {
 pub struct ProperUint<F: ScalarField>(pub(crate) Vec<AssignedValue<F>>);
 
 impl<F: ScalarField> ProperUint<F> {
+    pub fn new(limbs: Vec<AssignedValue<F>>) -> Self {
+        Self(limbs)
+    }
+
     pub fn limbs(&self) -> &[AssignedValue<F>] {
         self.0.as_slice()
     }
