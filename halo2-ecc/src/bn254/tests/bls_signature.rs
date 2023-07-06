@@ -3,11 +3,11 @@ use std::{
     io::{BufRead, BufReader},
 };
 
-use crate::fields::{FpStrategy, PrimeField};
-
 use super::*;
-#[allow(unused_imports)]
-use ff::PrimeField as _;
+use crate::{
+    fields::{FieldChip, FpStrategy},
+    halo2_proofs::halo2curves::bn256::G2Affine,
+};
 use halo2_base::{
     gates::{
         builder::{
@@ -16,14 +16,20 @@ use halo2_base::{
         },
         RangeChip,
     },
-    halo2_proofs::halo2curves::bn256::G1,
+    halo2_proofs::{
+        halo2curves::{
+            bn256::{multi_miller_loop, G2Prepared},
+            pairing::MillerLoopResult,
+        },
+        poly::kzg::multiopen::{ProverGWC, VerifierGWC},
+    },
     utils::fs::gen_srs,
+    Context,
 };
-use itertools::Itertools;
 use rand_core::OsRng;
 
 #[derive(Clone, Copy, Debug, Serialize, Deserialize)]
-struct MSMCircuitParams {
+struct BlsSignatureCircuitParams {
     strategy: FpStrategy,
     degree: u32,
     num_advice: usize,
@@ -32,44 +38,45 @@ struct MSMCircuitParams {
     lookup_bits: usize,
     limb_bits: usize,
     num_limbs: usize,
-    batch_size: usize,
-    radix: usize,
-    clump_factor: usize,
 }
 
-fn fixed_base_msm_test(
-    builder: &mut GateThreadBuilder<Fr>,
-    params: MSMCircuitParams,
-    bases: Vec<G1Affine>,
-    scalars: Vec<Fr>,
+/// Verify e(g1, signature) = e(pubkey, H(m))
+fn bls_signature_test<F: PrimeField>(
+    ctx: &mut Context<F>,
+    params: BlsSignatureCircuitParams,
+    g1: G1Affine,
+    signature: G2Affine,
+    pubkey: G1Affine,
+    msghash: G2Affine,
 ) {
+    // Calculate halo2 pairing by multipairing
     std::env::set_var("LOOKUP_BITS", params.lookup_bits.to_string());
-    let range = RangeChip::<Fr>::default(params.lookup_bits);
-    let fp_chip = FpChip::<Fr>::new(&range, params.limb_bits, params.num_limbs);
-    let ecc_chip = EccChip::new(&fp_chip);
+    let range = RangeChip::<F>::default(params.lookup_bits);
 
-    let scalars_assigned = scalars
-        .iter()
-        .map(|scalar| vec![builder.main(0).load_witness(*scalar)])
-        .collect::<Vec<_>>();
+    let fp_chip_1 = FpChip::<F>::new(&range, params.limb_bits, params.num_limbs);
+    let fp_chip_2 = FpChip::<F>::new(&range, params.limb_bits, params.num_limbs);
+    let pairing_chip = PairingChip::new(&fp_chip_1);
+    let bls_signature_chip = BlsSignatureChip::new(&fp_chip_2, &pairing_chip);
 
-    let msm = ecc_chip.fixed_base_msm(builder, &bases, scalars_assigned, Fr::NUM_BITS as usize);
+    let result = bls_signature_chip.bls_signature_verify(ctx, g1, signature, pubkey, msghash);
 
-    let mut elts: Vec<G1> = Vec::new();
-    for (base, scalar) in bases.iter().zip(scalars.iter()) {
-        elts.push(base * scalar);
-    }
-    let msm_answer = elts.into_iter().reduce(|a, b| a + b).unwrap().to_affine();
+    // Calculate non-halo2 pairing by multipairing
+    let signature_g2_prepared = G2Prepared::from(signature);
+    let hash_m_prepared = G2Prepared::from(-msghash);
+    let actual_result =
+        multi_miller_loop(&[(&g1, &signature_g2_prepared), (&pubkey, &hash_m_prepared)])
+            .final_exponentiation();
 
-    let msm_x = msm.x.value();
-    let msm_y = msm.y.value();
-    assert_eq!(msm_x, fe_to_biguint(&msm_answer.x));
-    assert_eq!(msm_y, fe_to_biguint(&msm_answer.y));
+    // Compare the 2 results
+    let fp12_chip = Fp12Chip::new(&fp_chip_1);
+    assert_eq!(
+        format!("Gt({:?})", fp12_chip.get_assigned_value(&result.into())),
+        format!("{actual_result:?}")
+    );
 }
 
-fn random_fixed_base_msm_circuit(
-    params: MSMCircuitParams,
-    bases: Vec<G1Affine>, // bases are fixed in vkey so don't randomly generate
+fn random_bls_signature_circuit(
+    params: BlsSignatureCircuitParams,
     stage: CircuitBuilderStage,
     break_points: Option<MultiPhaseThreadBreakPoints>,
 ) -> RangeCircuitBuilder<Fr> {
@@ -80,9 +87,15 @@ fn random_fixed_base_msm_circuit(
         CircuitBuilderStage::Keygen => GateThreadBuilder::keygen(),
     };
 
-    let scalars = (0..params.batch_size).map(|_| Fr::random(OsRng)).collect_vec();
+    let sk = Fr::random(OsRng);
+    let pubkey = G1Affine::from(G1Affine::generator() * sk);
+    // TODO: Implement hash_to_curve(msg) for arbitrary message
+    let msg_hash = G2Affine::random(OsRng);
+    let signature = G2Affine::from(msg_hash * sk);
+    let g1 = G1Affine::generator();
+
     let start0 = start_timer!(|| format!("Witness generation for circuit in {stage:?} stage"));
-    fixed_base_msm_test(&mut builder, params, bases, scalars);
+    bls_signature_test::<Fr>(builder.main(0), params, g1, signature, pubkey, msg_hash);
 
     let circuit = match stage {
         CircuitBuilderStage::Mock => {
@@ -100,47 +113,43 @@ fn random_fixed_base_msm_circuit(
 }
 
 #[test]
-fn test_fixed_base_msm() {
-    let path = "configs/bn254/fixed_msm_circuit.config";
-    let params: MSMCircuitParams = serde_json::from_reader(
+fn test_bls_signature() {
+    let run_path = "configs/bn254/bls_signature_circuit.config";
+    let debug_path = "halo2-ecc/configs/bn254/bls_signature_circuit.config";
+    let path = run_path;
+    // let path = debug_path;
+    // println!("{:#?}", std::env::current_dir());
+    let params: BlsSignatureCircuitParams = serde_json::from_reader(
         File::open(path).unwrap_or_else(|e| panic!("{path} does not exist: {e:?}")),
     )
     .unwrap();
-
-    let bases = (0..params.batch_size).map(|_| G1Affine::random(OsRng)).collect_vec();
-    let circuit = random_fixed_base_msm_circuit(params, bases, CircuitBuilderStage::Mock, None);
+    println!("num_advice: {num_advice}", num_advice = params.num_advice);
+    let circuit = random_bls_signature_circuit(params, CircuitBuilderStage::Mock, None);
     MockProver::run(params.degree, &circuit, vec![]).unwrap().assert_satisfied();
 }
 
 #[test]
-fn bench_fixed_base_msm() -> Result<(), Box<dyn std::error::Error>> {
-    let config_path = "configs/bn254/bench_fixed_msm.config";
+fn bench_bls_signature() -> Result<(), Box<dyn std::error::Error>> {
+    let rng = OsRng;
+    let config_path = "configs/bn254/bench_pairing.config";
     let bench_params_file =
         File::open(config_path).unwrap_or_else(|e| panic!("{config_path} does not exist: {e:?}"));
     fs::create_dir_all("results/bn254").unwrap();
     fs::create_dir_all("data").unwrap();
 
-    let results_path = "results/bn254/fixed_msm_bench.csv";
+    let results_path = "results/bn254/bls_signature_bench.csv";
     let mut fs_results = File::create(results_path).unwrap();
-    writeln!(fs_results, "degree,num_advice,num_lookup,num_fixed,lookup_bits,limb_bits,num_limbs,batch_size,proof_time,proof_size,verify_time")?;
+    writeln!(fs_results, "degree,num_advice,num_lookup,num_fixed,lookup_bits,limb_bits,num_limbs,proof_time,proof_size,verify_time")?;
 
     let bench_params_reader = BufReader::new(bench_params_file);
     for line in bench_params_reader.lines() {
-        let bench_params: MSMCircuitParams = serde_json::from_str(line.unwrap().as_str()).unwrap();
+        let bench_params: BlsSignatureCircuitParams =
+            serde_json::from_str(line.unwrap().as_str()).unwrap();
         let k = bench_params.degree;
         println!("---------------------- degree = {k} ------------------------------",);
-        let rng = OsRng;
 
         let params = gen_srs(k);
-        println!("{bench_params:?}");
-
-        let bases = (0..bench_params.batch_size).map(|_| G1Affine::random(OsRng)).collect_vec();
-        let circuit = random_fixed_base_msm_circuit(
-            bench_params,
-            bases.clone(),
-            CircuitBuilderStage::Keygen,
-            None,
-        );
+        let circuit = random_bls_signature_circuit(bench_params, CircuitBuilderStage::Keygen, None);
 
         let vk_time = start_timer!(|| "Generating vkey");
         let vk = keygen_vk(&params, &circuit)?;
@@ -154,16 +163,15 @@ fn bench_fixed_base_msm() -> Result<(), Box<dyn std::error::Error>> {
         drop(circuit);
         // create a proof
         let proof_time = start_timer!(|| "Proving time");
-        let circuit = random_fixed_base_msm_circuit(
+        let circuit = random_bls_signature_circuit(
             bench_params,
-            bases,
             CircuitBuilderStage::Prover,
             Some(break_points),
         );
         let mut transcript = Blake2bWrite::<_, _, Challenge255<_>>::init(vec![]);
         create_proof::<
             KZGCommitmentScheme<Bn256>,
-            ProverSHPLONK<'_, Bn256>,
+            ProverGWC<'_, Bn256>,
             Challenge255<G1Affine>,
             _,
             Blake2bWrite<Vec<u8>, G1Affine, Challenge255<G1Affine>>,
@@ -174,16 +182,14 @@ fn bench_fixed_base_msm() -> Result<(), Box<dyn std::error::Error>> {
 
         let proof_size = {
             let path = format!(
-                "data/
-                msm_circuit_proof_{}_{}_{}_{}_{}_{}_{}_{}.data",
+                "data/pairing_circuit_proof_{}_{}_{}_{}_{}_{}_{}.data",
                 bench_params.degree,
                 bench_params.num_advice,
                 bench_params.num_lookup_advice,
                 bench_params.num_fixed,
                 bench_params.lookup_bits,
                 bench_params.limb_bits,
-                bench_params.num_limbs,
-                bench_params.batch_size,
+                bench_params.num_limbs
             );
             let mut fd = File::create(&path)?;
             fd.write_all(&proof)?;
@@ -198,7 +204,7 @@ fn bench_fixed_base_msm() -> Result<(), Box<dyn std::error::Error>> {
         let mut transcript = Blake2bRead::<_, _, Challenge255<_>>::init(&proof[..]);
         verify_proof::<
             KZGCommitmentScheme<Bn256>,
-            VerifierSHPLONK<'_, Bn256>,
+            VerifierGWC<'_, Bn256>,
             Challenge255<G1Affine>,
             Blake2bRead<&[u8], G1Affine, Challenge255<G1Affine>>,
             SingleStrategy<'_, Bn256>,
@@ -208,7 +214,7 @@ fn bench_fixed_base_msm() -> Result<(), Box<dyn std::error::Error>> {
 
         writeln!(
             fs_results,
-            "{},{},{},{},{},{},{},{},{:?},{},{:?}",
+            "{},{},{},{},{},{},{},{:?},{},{:?}",
             bench_params.degree,
             bench_params.num_advice,
             bench_params.num_lookup_advice,
@@ -216,7 +222,6 @@ fn bench_fixed_base_msm() -> Result<(), Box<dyn std::error::Error>> {
             bench_params.lookup_bits,
             bench_params.limb_bits,
             bench_params.num_limbs,
-            bench_params.batch_size,
             proof_time.time.elapsed(),
             proof_size,
             verify_time.time.elapsed()
