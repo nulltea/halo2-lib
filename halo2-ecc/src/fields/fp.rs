@@ -15,6 +15,7 @@ use halo2_base::{
 };
 use num_bigint::{BigInt, BigUint};
 use num_traits::One;
+use std::cmp;
 use std::{cmp::max, marker::PhantomData};
 
 pub type BaseFieldChip<'range, C> =
@@ -300,7 +301,8 @@ impl<'range, F: PrimeField, Fp: PrimeField> FieldChip<F> for FpChip<'range, F, F
     }
 
     /// # Assumptions
-    /// * `max_bits` in `(n * (k - 1), n * k]`
+    /// * `max_bits <= n * k` where `n = self.limb_bits` and `k = self.num_limbs`
+    /// * `a.truncation.limbs.len() = self.num_limbs`
     fn range_check(
         &self,
         ctx: &mut Context<F>,
@@ -309,9 +311,7 @@ impl<'range, F: PrimeField, Fp: PrimeField> FieldChip<F> for FpChip<'range, F, F
     ) {
         let n = self.limb_bits;
         let a = a.into();
-        let k = a.truncation.limbs.len();
-        // BN254: max_bits: 254, n = 90, k = 3, n * (k - 1) = 180 < max_bits < 270 = n * k
-        // BLS12_381: max_bits: 381, n = 90, k = 3, n * (k - 1) = 180 < max_bits < 270 = n * k
+        let mut remaining_bits = max_bits;
 
         // println!("--- halo2-ecc/src/fields/fp.rs::range_check() ---");
         // println!("max_bits: {max_bits:#?}"); // 381
@@ -330,8 +330,9 @@ impl<'range, F: PrimeField, Fp: PrimeField> FieldChip<F> for FpChip<'range, F, F
         debug_assert!(a.value.bits() as usize <= max_bits);
 
         // range check limbs of `a` are in [0, 2^n) except last limb should be in [0, 2^last_limb_bits)
-        for (i, cell) in a.truncation.limbs.into_iter().enumerate() {
-            let limb_bits = if i == k - 1 { last_limb_bits } else { n };
+        for cell in a.truncation.limbs {
+            let limb_bits = cmp::min(n, remaining_bits);
+            remaining_bits -= limb_bits;
             self.range.range_check(ctx, cell, limb_bits);
         }
     }
