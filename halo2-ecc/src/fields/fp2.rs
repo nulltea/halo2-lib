@@ -7,11 +7,11 @@ use halo2_base::{
 };
 use num_bigint::BigUint;
 
-use crate::impl_field_ext_chip_common;
+use crate::{bigint::ProperCrtUint, impl_field_ext_chip_common};
 
 use super::{
     vector::{FieldVector, FieldVectorChip},
-    FieldChip, FieldExtConstructor, PrimeField, PrimeFieldChip,
+    FieldChip, FieldExtConstructor, PrimeField, PrimeFieldChip, Selectable,
 };
 
 /// Represent Fp2 point as `FieldVector` with degree = 2
@@ -117,6 +117,32 @@ where
 
     // ========= inherited from FieldVectorChip =========
     impl_field_ext_chip_common!();
+}
+
+impl<'range, F: PrimeField, FC: PrimeFieldChip<F>, Fp> Selectable<F, FieldVector<ProperCrtUint<F>>>
+    for Fp2Chip<'range, F, FC, Fp>
+where
+    FC: Selectable<F, ProperCrtUint<F>>,
+    <FC as FieldChip<F>>::FieldType: PrimeField,
+{
+    fn select(
+        &self,
+        ctx: &mut Context<F>,
+        a: FieldVector<ProperCrtUint<F>>,
+        b: FieldVector<ProperCrtUint<F>>,
+        sel: AssignedValue<F>,
+    ) -> FieldVector<ProperCrtUint<F>> {
+        self.0.select(ctx, a, b, sel)
+    }
+
+    fn select_by_indicator(
+        &self,
+        ctx: &mut Context<F>,
+        a: &impl AsRef<[FieldVector<ProperCrtUint<F>>]>,
+        coeffs: &[AssignedValue<F>],
+    ) -> FieldVector<ProperCrtUint<F>> {
+        self.0.select_by_indicator(ctx, a, coeffs)
+    }
 }
 
 mod bn254 {

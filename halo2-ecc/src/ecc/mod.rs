@@ -499,6 +499,29 @@ where
         let mut new_bits = chip.gate().num_to_bits(ctx, x, max_bits);
         bits.append(&mut new_bits);
     }
+
+    scalar_multiply_bits(chip, ctx, P, bits, max_bits, window_bits, scalar_is_safe)
+}
+
+pub fn scalar_multiply_bits<F: PrimeField, FC>(
+    chip: &FC,
+    ctx: &mut Context<F>,
+    P: EcPoint<F, FC::FieldPoint>,
+    bits: Vec<AssignedValue<F>>,
+    max_bits: usize,
+    window_bits: usize,
+    scalar_is_safe: bool,
+) -> EcPoint<F, FC::FieldPoint>
+where
+    FC: FieldChip<F> + Selectable<F, FC::FieldPoint>,
+{
+    assert!(!bits.is_empty());
+    assert!((max_bits as u64) <= modulus::<F>().bits());
+
+    let total_bits = bits.len();
+    let num_windows = (total_bits + window_bits - 1) / window_bits;
+    let rounded_bitlen = num_windows * window_bits;
+
     let mut rounded_bits = bits;
     let zero_cell = ctx.load_zero();
     rounded_bits.resize(rounded_bitlen, zero_cell);
@@ -989,6 +1012,29 @@ impl<'chip, F: PrimeField, FC: FieldChip<F>> EccChip<'chip, F, FC> {
             acc = into_strict_point(self.field_chip, ctx, _acc);
         }
         self.sub_unequal(ctx, acc, rand_point, true)
+    }
+
+    // See [`scalar_mult_bits`] for more details.
+    pub fn scalar_mult_bits(
+        &self,
+        ctx: &mut Context<F>,
+        P: EcPoint<F, FC::FieldPoint>,
+        bits: Vec<AssignedValue<F>>,
+        window_bits: usize,
+    ) -> EcPoint<F, FC::FieldPoint>
+    where
+        FC: Selectable<F, FC::FieldPoint>,
+    {
+        let max_bits = bits.len();
+        scalar_multiply_bits::<F, FC>(
+            self.field_chip,
+            ctx,
+            P,
+            bits,
+            max_bits,
+            window_bits,
+            true,
+        )
     }
 }
 

@@ -82,6 +82,16 @@ pub trait FieldChip<F: PrimeField>: Clone + Send + Sync {
         b: impl Into<Self::UnsafeFieldPoint>,
     ) -> Self::UnsafeFieldPoint;
 
+    fn add(
+        &self,
+        ctx: &mut Context<F>,
+        a: impl Into<Self::UnsafeFieldPoint>,
+        b: impl Into<Self::UnsafeFieldPoint>,
+    ) -> Self::FieldPoint {
+        let no_carry = self.add_no_carry(ctx, a, b);
+        self.carry_mod(ctx, no_carry)
+    }
+
     /// output: `a + c`
     fn add_constant_no_carry(
         &self,
