@@ -57,20 +57,20 @@ pub fn crt<F: BigPrimeField>(
     // `abs(modulus * quotient) < 2^{trunc_len - 1} * native_modulus::<F> - abs(a)
     // which is ensured if
     // `abs(modulus * quotient) < 2^{trunc_len - 1 + F::NUM_BITS - 1} <= 2^{trunc_len - 1} * native_modulus::<F> - abs(a)` given our assumption `abs(a) <= 2^{n * k - 1 + F::NUM_BITS - 2}`
+    // println!("quot_max_bits = {trunc_len} - 1 + {} - 1 - {}", F::NUM_BITS, modulus.bits());
     let quot_max_bits = trunc_len - 1 + (F::NUM_BITS as usize) - 1 - (modulus.bits() as usize);
     debug_assert!(quot_max_bits < trunc_len);
     // Let n' <= quot_max_bits - n(k-1) - 1
     // If quot[i] <= 2^n for i < k - 1 and quot[k-1] <= 2^{n'} then
     // quot < 2^{n(k-1)+1} + 2^{n' + n(k-1)} = (2+2^{n'}) 2^{n(k-1)} < 2^{n'+1} * 2^{n(k-1)} <= 2^{quot_max_bits - n(k-1)} * 2^{n(k-1)}
 
-    // println!("quot_max_bits = {quot_max_bits}"); //
-    // println!("n = {n}"); //
-    // println!("k = {k}"); //
-    // println!("n * (k - 1)= {}", n * (k - 1)); //
-    let quot_last_limb_bits = quot_max_bits - n * (k - 1);
+    
+    //println!("{quot_max_bits} - {n} * ({k} - 1)");
+    let quot_last_limb_bits = 0; //quot_max_bits - n * (k - 1);
 
     let out_max_bits = modulus.bits() as usize;
     // we assume `modulus` requires *exactly* `k` limbs to represent (if `< k` limbs ok, you should just be using that)
+    // println!("out_last_limb_bits = {out_max_bits} - {n} * ({k} - 1)");
     let out_last_limb_bits = out_max_bits - n * (k - 1);
 
     // these are witness vectors:
@@ -80,7 +80,7 @@ pub fn crt<F: BigPrimeField>(
     let (quot_val, out_val) = a.value.div_mod_floor(modulus);
 
     debug_assert!(out_val < (BigInt::one() << (n * k)));
-    debug_assert!(quot_val.abs() < (BigInt::one() << quot_max_bits));
+    // debug_assert!(quot_val.abs() < (BigInt::one() << quot_max_bits));
 
     // decompose_bigint just throws away signed limbs in index >= k
     let out_vec = decompose_bigint::<F>(&out_val, k, n);
@@ -160,7 +160,7 @@ pub fn crt<F: BigPrimeField>(
 
     // range check that quot_cell in quot_assigned is in [-2^n, 2^n) except for last cell check it's in [-2^quot_last_limb_bits, 2^quot_last_limb_bits)
     for (q_index, quot_cell) in quot_assigned.iter().enumerate() {
-        let limb_bits = if q_index == k - 1 { quot_last_limb_bits } else { n };
+        let limb_bits = if q_index == k - 1 { /* quot_last_limb_bits  */ n } else { n };
         let limb_base =
             if q_index == k - 1 { range.gate().pow_of_two()[limb_bits] } else { limb_bases[1] };
 

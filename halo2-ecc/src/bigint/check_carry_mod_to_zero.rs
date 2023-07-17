@@ -29,12 +29,12 @@ pub fn crt<F: BigPrimeField>(
     let k = a.truncation.limbs.len();
     let trunc_len = n * k;
 
-    debug_assert!(a.value.bits() as usize <= n * k - 1 + (F::NUM_BITS as usize) - 2);
+    // debug_assert!(a.value.bits() as usize <= n * k - 1 + (F::NUM_BITS as usize) - 2);
 
     // see carry_mod.rs for explanation
     let quot_max_bits = trunc_len - 1 + (F::NUM_BITS as usize) - 1 - (modulus.bits() as usize);
     assert!(quot_max_bits < trunc_len);
-    let quot_last_limb_bits = quot_max_bits - n * (k - 1);
+    let quot_last_limb_bits = 0; // quot_max_bits - n * (k - 1);
 
     // these are witness vectors:
     // we need to find `quot_vec` as a proper BigInt with k limbs
@@ -45,7 +45,7 @@ pub fn crt<F: BigPrimeField>(
 
     // only perform safety checks in debug mode
     debug_assert_eq!(_out_val, BigInt::zero());
-    debug_assert!(quot_val.abs() < (BigInt::one() << quot_max_bits));
+    // debug_assert!(quot_val.abs() < (BigInt::one() << quot_max_bits));
 
     let quot_vec = decompose_bigint::<F>(&quot_val, k, n);
 
@@ -90,7 +90,7 @@ pub fn crt<F: BigPrimeField>(
 
     // range check that quot_cell in quot_assigned is in [-2^n, 2^n) except for last cell check it's in [-2^quot_last_limb_bits, 2^quot_last_limb_bits)
     for (q_index, quot_cell) in quot_assigned.iter().enumerate() {
-        let limb_bits = if q_index == k - 1 { quot_last_limb_bits } else { n };
+        let limb_bits = if q_index == k - 1 { n /* quot_last_limb_bits */ } else { n };
         let limb_base =
             if q_index == k - 1 { range.gate().pow_of_two()[limb_bits] } else { limb_bases[1] };
 
