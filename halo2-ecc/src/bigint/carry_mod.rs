@@ -160,6 +160,7 @@ pub fn crt<F: BigPrimeField>(
 
     // range check that quot_cell in quot_assigned is in [-2^n, 2^n) except for last cell check it's in [-2^quot_last_limb_bits, 2^quot_last_limb_bits)
     for (q_index, quot_cell) in quot_assigned.iter().enumerate() {
+        #[allow(clippy::if_same_then_else)]
         let limb_bits = if q_index == k - 1 { /* quot_last_limb_bits  */ n } else { n };
         let limb_base =
             if q_index == k - 1 { range.gate().pow_of_two()[limb_bits] } else { limb_bases[1] };

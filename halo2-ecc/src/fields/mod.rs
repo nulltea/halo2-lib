@@ -107,6 +107,16 @@ pub trait FieldChip<F: PrimeField>: Clone + Send + Sync {
         b: impl Into<Self::UnsafeFieldPoint>,
     ) -> Self::UnsafeFieldPoint;
 
+    fn sub(
+        &self,
+        ctx: &mut Context<F>,
+        a: impl Into<Self::UnsafeFieldPoint>,
+        b: impl Into<Self::UnsafeFieldPoint>,
+    ) -> Self::FieldPoint {
+        let no_carry = self.sub_no_carry(ctx, a, b);
+        self.carry_mod(ctx, no_carry)
+    }
+
     fn negate(&self, ctx: &mut Context<F>, a: Self::FieldPoint) -> Self::FieldPoint;
 
     /// a * c

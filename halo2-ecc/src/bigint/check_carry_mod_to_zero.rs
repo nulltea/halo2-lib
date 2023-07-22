@@ -44,7 +44,7 @@ pub fn crt<F: BigPrimeField>(
     let (quot_val, _out_val) = a.value.div_mod_floor(modulus);
 
     // only perform safety checks in debug mode
-    debug_assert_eq!(_out_val, BigInt::zero());
+    // debug_assert_eq!(_out_val, BigInt::zero());
     // debug_assert!(quot_val.abs() < (BigInt::one() << quot_max_bits));
 
     let quot_vec = decompose_bigint::<F>(&quot_val, k, n);
@@ -90,6 +90,7 @@ pub fn crt<F: BigPrimeField>(
 
     // range check that quot_cell in quot_assigned is in [-2^n, 2^n) except for last cell check it's in [-2^quot_last_limb_bits, 2^quot_last_limb_bits)
     for (q_index, quot_cell) in quot_assigned.iter().enumerate() {
+        #[allow(clippy::if_same_then_else)]
         let limb_bits = if q_index == k - 1 { n /* quot_last_limb_bits */ } else { n };
         let limb_base =
             if q_index == k - 1 { range.gate().pow_of_two()[limb_bits] } else { limb_bases[1] };

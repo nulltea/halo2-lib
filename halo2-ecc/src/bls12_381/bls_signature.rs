@@ -2,15 +2,15 @@
 
 use super::pairing::PairingChip;
 use super::{Fp12Chip, Fp2Chip, FpChip, FqPoint};
+use crate::bigint::ProperCrtUint;
+use crate::ecc::bls_signature::BlsSignatureChip as BlsSignatureChipTrait;
 use crate::ecc::{EcPoint, EccChip};
 use crate::fields::vector::FieldVector;
 use crate::fields::{FieldChip, PrimeField};
-use halo2curves::bls12_381::{
-    Fq, G1Affine, G2Affine, BLS_X, FROBENIUS_COEFF_FQ12_C1,
-};
 use crate::print_type_of;
 use halo2_base::utils::modulus;
 use halo2_base::Context;
+use halo2curves::bls12_381::{Fq, Fq12, Fq2, G1Affine, G2Affine, BLS_X, FROBENIUS_COEFF_FQ12_C1};
 use num_bigint::BigUint;
 
 // To avoid issues with mutably borrowing twice (not allowed in Rust), we only store fp_chip and construct g2_chip and fp12_chip in scope when needed for temporary mutable borrows
@@ -80,12 +80,12 @@ impl<'chip, F: PrimeField> Fp2Chip<'chip, F> {
 
 pub struct BlsSignatureChip<'chip, F: PrimeField> {
     pub fp_chip: &'chip FpChip<'chip, F>,
-    pub pairing_chip: &'chip PairingChip<'chip, F>,
+    pub pairing_chip: PairingChip<'chip, F>,
 }
 
 impl<'chip, F: PrimeField> BlsSignatureChip<'chip, F> {
-    pub fn new(fp_chip: &'chip FpChip<F>, pairing_chip_1: &'chip PairingChip<F>) -> Self {
-        Self { fp_chip, pairing_chip: pairing_chip_1 }
+    pub fn new(fp_chip: &'chip FpChip<F>, pairing_chip: PairingChip<'chip, F>) -> Self {
+        Self { fp_chip, pairing_chip }
     }
 
     // Verifies that e(g1, signature) = e(pubkey, H(m)) by checking e(g1, signature)*e(pubkey, -H(m)) === 1
@@ -106,43 +106,14 @@ impl<'chip, F: PrimeField> BlsSignatureChip<'chip, F> {
         let pubkey_assigned = self.pairing_chip.load_private_g1_unchecked(ctx, pubkey);
         let hash_m_assigned = self.pairing_chip.load_private_g2_unchecked(ctx, msghash);
 
-        // Check points are on curve
-        let g1_chip = EccChip::new(self.fp_chip);
-        let fp2_chip = Fp2Chip::<F>::new(self.fp_chip);
-        let g2_chip = EccChip::new(&fp2_chip);
-        g1_chip.assert_is_on_curve::<halo2curves::bls12_381::G1Affine>(
+        self.verify_signature(
+            signature_assigned,
+            hash_m_assigned,
+            pubkey_assigned,
+            g1_assigned,
             ctx,
-            &g1_assigned,
-        );
-        g2_chip.assert_is_on_curve::<halo2curves::bls12_381::G2Affine>(
-            ctx,
-            &signature_assigned,
-        );
-        // Checking pubkey is on curve also check that it's in subgroup G1 since G1 has cofactor of 1
-        g1_chip.assert_is_on_curve::<halo2curves::bls12_381::G1Affine>(
-            ctx,
-            &pubkey_assigned,
-        );
-        g2_chip.assert_is_on_curve::<halo2curves::bls12_381::G2Affine>(
-            ctx,
-            &hash_m_assigned,
-        );
-
-        // Check Signature is in Subgroup G2
-        self.assert_in_g2(ctx, &signature_assigned.clone());
-
-        self.assert_in_g2(ctx, &hash_m_assigned.clone());
-
-        let fp12_chip = Fp12Chip::<F>::new(self.fp_chip);
-        let g12_chip = EccChip::new(&fp12_chip);
-        let neg_signature_assigned_g12 = g12_chip.negate(ctx, &signature_assigned);
-
-        let multi_paired = self.pairing_chip.multi_miller_loop(
-            ctx,
-            vec![(&g1_assigned, &neg_signature_assigned_g12), (&pubkey_assigned, &hash_m_assigned)],
-        );
-        let result = fp12_chip.final_exp(ctx, multi_paired);
-        result
+            true,
+        )
     }
 
     /// Subgroup check for G2:
@@ -203,5 +174,45 @@ impl<'chip, F: PrimeField> BlsSignatureChip<'chip, F> {
 
         // assert_eq!(psi_x.0[0].0.value, lambda_Px_6_x_sq.0[0].value);
         // assert_eq!(psi_y.0[0].0.value, lambda_Py_6_x_sq.0[0].value);
+    }
+}
+
+impl<'chip, F: PrimeField> BlsSignatureChipTrait<'chip, F> for BlsSignatureChip<'chip, F> {
+    fn verify_signature(
+        &self,
+        signature: EcPoint<F, FieldVector<ProperCrtUint<F>>>,
+        msghash: EcPoint<F, FieldVector<ProperCrtUint<F>>>,
+        pubkey: EcPoint<F, ProperCrtUint<F>>,
+        g1: EcPoint<F, ProperCrtUint<F>>,
+        ctx: &mut Context<F>,
+        is_strict: bool,
+    ) -> FqPoint<F> {
+        let g1_chip = EccChip::new(self.fp_chip);
+        let fp2_chip = Fp2Chip::<F>::new(self.fp_chip);
+        let g2_chip = EccChip::new(&fp2_chip);
+        if is_strict {
+            g1_chip.assert_is_on_curve::<halo2curves::bls12_381::G1Affine>(ctx, &g1);
+            g2_chip.assert_is_on_curve::<halo2curves::bls12_381::G2Affine>(ctx, &signature);
+            // Checking pubkey is on curve also check that it's in subgroup G1 since G1 has cofactor of 1
+            g1_chip.assert_is_on_curve::<halo2curves::bls12_381::G1Affine>(ctx, &pubkey);
+            g2_chip.assert_is_on_curve::<halo2curves::bls12_381::G2Affine>(ctx, &msghash);
+
+            // Check Signature is in Subgroup G2
+
+            self.assert_in_g2(ctx, &signature.clone());
+            self.assert_in_g2(ctx, &msghash.clone());
+        }
+
+        let fp12_chip = Fp12Chip::<F>::new(self.fp_chip);
+        let gt_chip = EccChip::new(&fp12_chip);
+        // TODO: negate G1 instead of signature
+        let neg_g1 = g1_chip.negate(ctx, &g1);
+
+        let multi_paired = self
+            .pairing_chip
+            .multi_miller_loop(ctx, vec![(&neg_g1, &signature), (&pubkey, &msghash)]);
+        let result = fp12_chip.final_exp(ctx, multi_paired);
+        println!("final exp res: {:?}", fp12_chip.get_assigned_value(&result.clone().into()));
+        fp12_chip.load_constant(ctx, Fq12::zero())
     }
 }

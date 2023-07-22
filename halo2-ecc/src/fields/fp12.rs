@@ -247,8 +247,21 @@ mod bn254 {
 }
 
 mod bls12_381 {
-    use crate::fields::FieldExtConstructor;
+    use crate::{
+        bls12_381::{
+            pairing::{fq12_mul, fq2_mul_by_nonresidue, fq6_mul, fq6_mul_by_nonresidue},
+            Fp12Chip, Fp2Chip, FpChip, FqPoint,
+        },
+        fields::{
+            vector::{FieldVector, FieldVectorChip},
+            FieldChip, FieldExtConstructor,
+        },
+    };
+    use halo2_base::{
+        halo2_proofs::halo2curves::bn256::Fr, safe_types::RangeChip, utils::ScalarField, Context,
+    };
     use halo2curves::bls12_381::{Fq, Fq12, Fq2, Fq6};
+    use itertools::Itertools;
     // This means we store an Fp12 point as `\sum_{i = 0}^6 (a_{i0} + a_{i1} * u) * w^i`
     // This is encoded in an FqPoint of degree 12 as `(a_{00}, ..., a_{50}, a_{01}, ..., a_{51})`
     impl FieldExtConstructor<Fq, 12> for Fq12 {
@@ -274,5 +287,106 @@ mod bls12_381 {
                 x.c1.c0.c1, x.c0.c1.c1, x.c1.c1.c1, x.c0.c2.c1, x.c1.c2.c1,
             ]
         }
+    }
+
+    impl<'chip, F: ScalarField> Fp12Chip<'chip, F> {
+        pub fn mul(&self, ctx: &mut Context<F>, a: &FqPoint<F>, b: &FqPoint<F>) -> FqPoint<F> {
+            let fp6_chip = FieldVectorChip::<F, FpChip<F>>::new(self.fp_chip());
+            let fp2_chip = Fp2Chip::<F>::new(self.fp_chip());
+
+            let a = (
+                FieldVector(permute_vector(&a.0, &[0, 6, 2, 8, 4, 10])),
+                FieldVector(permute_vector(&a.0, &[1, 7, 3, 9, 5, 11])),
+            );
+            let b = (
+                FieldVector(permute_vector(&b.0, &[0, 6, 2, 8, 4, 10])),
+                FieldVector(permute_vector(&b.0, &[1, 7, 3, 9, 5, 11])),
+            );
+
+            let ab00 = fq6_mul(&fp2_chip, ctx, &a.0, &b.0);
+            let ab11 = fq6_mul(&fp2_chip, ctx, &a.1, &b.1);
+
+            let a01 = {
+                let tv = fp6_chip.add_no_carry(ctx, a.0.clone(), a.1.clone());
+                fp6_chip.carry_mod(ctx, tv)
+            };
+            let b01 = {
+                let tv = fp6_chip.add_no_carry(ctx, b.0.clone(), b.1.clone());
+                fp6_chip.carry_mod(ctx, tv)
+            };
+            let c1 = fq6_mul(&fp2_chip, ctx, &a01, &b01);
+            let c1 = fp6_chip.sub_no_carry(ctx, c1, ab00.clone());
+            let c1 = {
+                let tv = fp6_chip.sub_no_carry(ctx, c1, ab11.clone());
+                fp6_chip.carry_mod(ctx, tv)
+            };
+
+            let ab11 = fq6_mul_by_nonresidue(&ab11, &fp2_chip, ctx);
+            let c0 = {
+                let tv = fp6_chip.add_no_carry(ctx, ab00, ab11);
+                fp6_chip.carry_mod(ctx, tv)
+            };
+
+            let c = c0.0.into_iter().chain(c1.0).collect_vec();
+
+            FieldVector(
+                permute_vector(&c, &[0, 6, 2, 8, 4, 10])
+                    .into_iter()
+                    .chain(permute_vector(&c, &[1, 7, 3, 9, 5, 11]))
+                    .collect_vec(),
+            )
+        }
+    }
+
+    fn permute_vector<T: Clone>(v1: &Vec<T>, indexes: &[usize]) -> Vec<T> {
+        indexes.iter().map(|i| v1[*i].clone()).collect()
+    }
+
+    #[test]
+    fn fq12_mul_test() {
+        let a = Fq12::new([
+            "095f4afdc084d57eee56b4202c532a0df4c3ddd95462597b984a365b728e9c81fb2bb317f5dfb9711e30875e2165aff3",
+            "1435572b6fb6067632a4182a3bdd595dd4621ccc11cf4000111ed2c1b6b66422e911c96e6d069e542d258785d021ac00",
+            "0668c42fd3ba46102620bab4712ab825fa3922cc2ff5d8ef1f6f8063caf12a97f0bd9926063ba5b4816b7234aa2febcd",
+            "0de0baf382f95f2b82fdae92e937e69b2fb1edbfbfd1a6e4de4ace750418307725f43ca854c898b763aee2656da078d5",
+            "0be98d82c63cf9984bb08fdbfb10171a12f4fc97d9daf2a592cce173802c73ea934fd3d3f3c1697b8a54978b0312ef90",
+            "173f49f514603120824d50acb1bc8d379086bcbeeb9d3b044cfa52b244bb0bf7516c01277ec34fb804957a4402b7feb7",
+            "036a5c0c6bd528e41bfbf01fbb1ae0b1f07c68e891b1177e1cffa7873fb0744d01b8948e58158be9496fcbcecc9c5c41",
+            "0fa00a6dd146ee3f380fc1da81f0328f8d4db5be7edc08c71031896621a9f547acc8885f60bed73f80db2c0df30d670d",
+            "088cbdf6007360acd11df5a86c4af64b1b04e644efd10f6224354558edf664d209c042f299e4c4ac495f947f68045dbd",
+            "01fc612df463dca68ee17dfb03a3d2930a03ff1d5ebe7e89ab018805a418fc8fe82f289d09f37ec468da09bd8a69fd7d",
+            "0348b0220c9154b68c5ee57e1c8da961c7666ed36b043cd0192677778fb676e92c96a20be40b7118e1bbf6edc4a64b12",
+            "180419099d423d6a7a0c6f7562e1f2c0926f4ae08a5bb1b3deb5e23e19884e39f06870186a9e4bc7354f45abfcbd4e37",
+        ].map(|e| Fq::from_bytes(&hex::decode(e).unwrap().into_iter().rev().collect_vec().try_into().unwrap()).unwrap()));
+
+        let b = Fq12::new([
+            "0e067ba6baee481ab2cf183e940f4a0d0a0a227b689a0a1a22fe842bbd6968578f39e68e10c9da589e187e0c0dac4724",
+            "00454f0072513adce8c7b3a8265d549a0f3e23679dbea1ca2e57b9fd547eda1c3891933d2f8af06240ebad3d13fa896e",
+            "164676476a575b26801c395b81d24e911c05997dd94871c36e9b801b6a588319af8ad536a610ae30a7d503bccb328783",
+            "1327595233db66e264d694b398e073403aab1359eb24dfd3940c46ed5373bef283e2454750c718eda16c0a28e3e238c1",
+            "18870dbe1314a1c093a5db4762daf457c74be3740eeff23a8cba16eb221c95157e858443f07558d2cc17ade048e775e2",
+            "106a97367211091a444381f22b3294c0a1c02a097c2cf32e7dbbf66ee96a5cabd96f9cec2a02e3bfa598218726205ebf",
+            "05a4442e5c49306100db33bcdde02d82023ad218f0c60ab1a50c3e2549ac79faf8d5dbc45698249a40232c40d5c15b49",
+            "0622b4a66469f188a595dc048f6a292db7bbe1644dbdd8f2f3cd358ccdab63e201bb6046f09236a8f38a8fd461964a24",
+            "0462f7612d700d43404d00bfe6d5047bf4f0584c49d2f7aa39d0fabad95803629675050261f5965afc29c7995c74f3dd",
+            "04ae33b025312bcfa99ae2e0006fc98bf5d2c6e693bb2ef6e36250f6a2c2b4ed70e5561d307a0e56ee4b5beb279bf3eb",
+            "0a79a216dcb1fdf6e68b59396a38f4e6ce2074c8ef9ccec7a0b9c7e0d5ec1e87d78a7f84e751ab83cb8badb85687d713",
+            "160412c671989f8dcdc99bda8ff56e0e103207de43049e53dd5382d6d406bd0b63e75ad49a41f2e5289dcbb970b35ee6",
+        ].map(|e| Fq::from_bytes(&hex::decode(e).unwrap().into_iter().rev().collect_vec().try_into().unwrap()).unwrap()));
+
+        let mut ctx = Context::<Fr>::new(true, 0);
+        let range_chip = RangeChip::<Fr>::new(halo2_base::gates::range::RangeStrategy::Vertical, 8);
+        let fp_chip = FpChip::<Fr>::new(&range_chip, 112, 4);
+        let fp12_chip = super::Fp12Chip::<Fr, FpChip<Fr>, Fq12, 9>::new(&fp_chip);
+
+        let a_assigned = fp12_chip.load_private(&mut ctx, a);
+        let b_assigned = fp12_chip.load_private(&mut ctx, b);
+
+        let c = fq12_mul(&fp12_chip, &mut ctx, &a_assigned, &b_assigned);
+        let c_value = fp12_chip.get_assigned_value(&c.into());
+
+        let c_check = a * b;
+
+        assert_eq!(c_value, c_check);
     }
 }

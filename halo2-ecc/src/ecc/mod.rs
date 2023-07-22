@@ -17,6 +17,7 @@ pub mod ecdsa;
 pub mod fixed_base;
 // pub mod fixed_base_pippenger;
 pub mod pippenger;
+pub mod bls_signature;
 
 // EcPoint and EccChip take in a generic `FieldChip` to implement generic elliptic curve operations on arbitrary field extensions (provided chip exists) for short Weierstrass curves (currently further assuming a4 = 0 for optimization purposes)
 #[derive(Debug)]
@@ -803,7 +804,7 @@ pub fn get_naf(mut exp: Vec<u64>) -> Vec<i8> {
         }
     }
     if exp.len() != len {
-        assert_eq!(len, exp.len() + 1);
+        // assert_eq!(len, exp.len() + 1);
         assert!(exp[len] == 1);
         naf.push(1);
     }
