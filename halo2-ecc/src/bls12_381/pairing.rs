@@ -17,7 +17,7 @@ use halo2curves::{
 use itertools::Itertools;
 use rayon::vec;
 
-const XI_0: i64 = 9;
+const XI_0: i64 = 1;
 
 // Inputs:
 //  Q0 = (x_1, y_1) and Q1 = (x_2, y_2) are points in E(Fp2)
@@ -60,8 +60,8 @@ pub fn sparse_line_function_unequal<F: PrimeField>(
 
 // Assuming curve is of form Y^2 = X^3 + b (a = 0) to save operations
 // Inputs:
-//  Q = (x, y) is a point in E(Fp2)
-//  P = (P.x, P.y) in E(Fp)
+//  Q = (x, y) is a point in E(Fp)
+//  P = (P.x, P.y) in E(Fp2)
 // Output:
 //  line_{Psi(Q), Psi(Q)}(P) where Psi(x,y) = (w^2 x, w^3 y)
 //  - equals (3x^3 - 2y^2)(XI_0 + u) + w^4 (-3 x^2 * Q.x) + w^3 (2 y * Q.y) =: out0 + out4 * w^4 + out3 * w^3 where out0, out3, out4 are Fp2 points
@@ -69,8 +69,8 @@ pub fn sparse_line_function_unequal<F: PrimeField>(
 pub fn sparse_line_function_equal<F: PrimeField>(
     fp2_chip: &Fp2Chip<F>,
     ctx: &mut Context<F>,
-    Q: &EcPoint<F, FqPoint<F>>,
     P: &EcPoint<F, FpPoint<F>>,
+    Q: &EcPoint<F, FqPoint<F>>,
 ) -> Vec<Option<FqPoint<F>>> {
     let (x, y) = (&Q.x, &Q.y);
     assert_eq!(x.0.len(), 2);
@@ -164,33 +164,33 @@ pub fn sparse_fp12_multiply<F: PrimeField>(
 
 // Input:
 // - g is Fp12 point
-// - Q = (P0, P1) with Q0, Q1 points in E(Fp2)
-// - P is point in E(Fp)
+// - P = (P0, P1) with Q0, Q1 points in E(Fp2)
+// - Q is point in E(Fp)
 // Output:
 // - out = g * l_{Psi(Q0), Psi(Q1)}(P) as Fp12 point
 pub fn fp12_multiply_with_line_unequal<F: PrimeField>(
     fp2_chip: &Fp2Chip<F>,
     ctx: &mut Context<F>,
     g: &FqPoint<F>,
-    Q: (&EcPoint<F, FqPoint<F>>, &EcPoint<F, FqPoint<F>>),
-    P: &EcPoint<F, FpPoint<F>>,
+    P: (&EcPoint<F, FqPoint<F>>, &EcPoint<F, FqPoint<F>>),
+    Q: &EcPoint<F, FpPoint<F>>,
 ) -> FqPoint<F> {
-    let line = sparse_line_function_unequal::<F>(fp2_chip, ctx, Q, P);
+    let line = sparse_line_function_unequal::<F>(fp2_chip, ctx, P, Q);
     sparse_fp12_multiply::<F>(fp2_chip, ctx, g, &line)
 }
 
 // Input:
 // - g is Fp12 point
-// - Q is point in E(Fp2)
-// - P is point in E(Fp)
+// - P is point in E(Fp2)
+// - Q is point in E(Fp)
 // Output:
 // - out = g * l_{Psi(Q), Psi(Q)}(P) as Fp12 point
 pub fn fp12_multiply_with_line_equal<F: PrimeField>(
     fp2_chip: &Fp2Chip<F>,
     ctx: &mut Context<F>,
     g: &FqPoint<F>,
-    Q: &EcPoint<F, FqPoint<F>>,
-    P: &EcPoint<F, FpPoint<F>>,
+    Q: &EcPoint<F, FpPoint<F>>,
+    P: &EcPoint<F, FqPoint<F>>,
 ) -> FqPoint<F> {
     let line = sparse_line_function_equal::<F>(fp2_chip, ctx, Q, P);
     sparse_fp12_multiply::<F>(fp2_chip, ctx, g, &line)
@@ -233,7 +233,7 @@ pub fn miller_loop_BN<F: PrimeField>(
     i -= 1;
 
     // initialize the first line function into Fq12 point
-    let sparse_f = sparse_line_function_equal::<F>(ecc_chip.field_chip(), ctx, &R, P);
+    let sparse_f = sparse_line_function_equal::<F>(ecc_chip.field_chip(), ctx, &P, &R);
     assert_eq!(sparse_f.len(), 6);
 
     let fp_chip = ecc_chip.field_chip.fp_chip();
@@ -260,7 +260,7 @@ pub fn miller_loop_BN<F: PrimeField>(
     loop {
         if i != last_index - 1 {
             let f_sq = fp12_chip.mul(ctx, &f, &f);
-            f = fp12_multiply_with_line_equal::<F>(ecc_chip.field_chip(), ctx, &f_sq, &R, P);
+            f = fp12_multiply_with_line_equal::<F>(ecc_chip.field_chip(), ctx, &f_sq, P, &R);
         }
         R = ecc_chip.double(ctx, &R);
 
@@ -300,13 +300,121 @@ pub fn miller_loop_BN<F: PrimeField>(
 
 // let pairs = [(a_i, b_i)], a_i in G_1, b_i in G_2
 // output is Prod_i e'(a_i, b_i), where e'(a_i, b_i) is the output of `miller_loop_BN(b_i, a_i)`
+pub fn multi_miller_loop_BN<F: PrimeField>(
+    ecc_chip: &EccChip<F, Fp2Chip<F>>,
+    ctx: &mut Context<F>,
+    pairs: Vec<(&EcPoint<F, FpPoint<F>>, &EcPoint<F, FqPoint<F>>)>,
+) -> FqPoint<F> {
+    let fp_chip = ecc_chip.field_chip.fp_chip();
+    // initialize the first line function into Fq12 point
+    let mut f = {
+        let sparse_f =
+            sparse_line_function_equal::<F>(ecc_chip.field_chip(), ctx, pairs[0].0, pairs[0].1);
+        assert_eq!(sparse_f.len(), 6);
+
+        let zero_fp = fp_chip.load_constant(ctx, Fq::zero());
+        let mut f_coeffs = Vec::with_capacity(12);
+        for coeff in &sparse_f {
+            if let Some(fp2_point) = coeff {
+                f_coeffs.push(fp2_point[0].clone());
+            } else {
+                f_coeffs.push(zero_fp.clone());
+            }
+        }
+        for coeff in &sparse_f {
+            if let Some(fp2_point) = coeff {
+                f_coeffs.push(fp2_point[1].clone());
+            } else {
+                f_coeffs.push(zero_fp.clone());
+            }
+        }
+        FieldVector(f_coeffs)
+    };
+    for &(q, p) in pairs.iter().skip(1) {
+        f = fp12_multiply_with_line_equal::<F>(ecc_chip.field_chip(), ctx, &f, q, p);
+    }
+
+    let fp12_chip = Fp12Chip::<F>::new(fp_chip);
+    let mut f = fp12_chip.load_private(ctx, Fq12::one());
+
+    // let mut r = pairs.iter().map(|pair| pair.1.clone()).collect::<Vec<_>>();
+    let mut r = pairs
+        .iter()
+        .map(|pair| EcProjective::from_affine(pair.1.clone(), ecc_chip.field_chip(), ctx))
+        .collect::<Vec<_>>();
+    let fp12_chip = Fp12Chip::<F>::new(fp_chip);
+    // let mut found_one = false;
+    for (i, bit) in (0..64).rev().map(|i| (i as usize, (((BLS_X >> 1) >> i) & 1) == 1)) {
+        // if !found_one {
+        //     found_one = bit;
+        //     continue;
+        // }
+        // println!("i = {} bit {}", i, bit);
+        f = fp12_chip.mul(ctx, &f, &f);
+        // for (r, &(q, _)) in r.iter().zip(pairs.iter()) {
+        //     let r_aff = r.to_affine(ecc_chip.field_chip(), ctx);
+        //     f = fp12_multiply_with_line_equal::<F>(ecc_chip.field_chip(), ctx, &f, q, &r_aff);
+        // }
+        // if i == 63 {
+        //     // continue;
+        // } else {
+        //     // println!("squaring f");
+        //     f = fp12_chip.mul(ctx, &f, &f);
+        //     for (r, &(q, _)) in r.iter().zip(pairs.iter()) {
+        //         let r_aff = r.to_affine(ecc_chip.field_chip(), ctx);
+        //         f = fp12_multiply_with_line_equal::<F>(ecc_chip.field_chip(), ctx, &f, q, &r_aff);
+        //     }
+        // }
+
+        // if bit != last_index - 1 {
+        //     f = fp12_chip.mul(ctx, &f, &f);
+        //     for (r, &(a, _)) in r.iter().zip(pairs.iter()) {
+        //         f = fp12_multiply_with_line_equal::<F>(ecc_chip.field_chip(), ctx, &f, r, a);
+        //     }
+        // }
+        // for r in r.iter_mut() {
+        //     *r = ecc_chip.double(ctx, r.clone());
+        // }
+
+        for (r, &(q, p)) in r.iter_mut().zip(pairs.iter()) {
+            let r_aff = r.to_affine(ecc_chip.field_chip(), ctx);
+            f = fp12_multiply_with_line_equal::<F>(ecc_chip.field_chip(), ctx, &f, q, &r_aff);
+
+            doubling_step(ecc_chip.field_chip(), ctx, r, false);
+            // *r = ecc_chip.add_unequal(ctx, r.clone(), p.clone(), false);
+        }
+
+        if bit {
+            for (r, &(q, p)) in r.iter_mut().zip(pairs.iter()) {
+                let r_aff = r.to_affine(ecc_chip.field_chip(), ctx);
+                f = fp12_multiply_with_line_unequal::<F>(
+                    ecc_chip.field_chip(),
+                    ctx,
+                    &f,
+                    (&r_aff, p),
+                    q,
+                );
+                addition_step(ecc_chip.field_chip(), ctx, r, p, false);
+
+                // *r = ecc_chip.add_unequal(ctx, r.clone(), p.clone(), false);
+            }
+        } else {
+            // replace with found_one?
+        }
+    }
+
+    println!("[circuit] f -> loop = {:?}", fp12_chip.get_assigned_value(&f.clone().into()));
+
+    f
+}
+
+// let pairs = [(a_i, b_i)], a_i in G_1, b_i in G_2
+// output is Prod_i e'(a_i, b_i), where e'(a_i, b_i) is the output of `miller_loop_BN(b_i, a_i)`
 pub fn multi_miller_loop_BLS<F: PrimeField>(
     ecc_chip: &EccChip<F, Fp2Chip<F>>,
     ctx: &mut Context<F>,
     pairs: Vec<(&EcPoint<F, FpPoint<F>>, &EcPoint<F, FqPoint<F>>)>,
 ) -> FqPoint<F> {
-    println!("----------- start multi_miller_loop_BLS ----------");
-
     let fp_chip = ecc_chip.field_chip.fp_chip();
 
     let fp12_chip = Fp12Chip::<F>::new(fp_chip);
@@ -321,94 +429,25 @@ pub fn multi_miller_loop_BLS<F: PrimeField>(
         .collect::<Vec<_>>();
     let mut found_one = false;
     let mut j = 0;
-    for i in (0..64).rev().map(|b| (((BLS_X >> 1) >> b) & 1) == 1) {
+    for bit in (0..64).rev().map(|b| (((BLS_X >> 1) >> b) & 1) == 1) {
         if !found_one {
-            found_one = i;
+            found_one = bit;
             continue;
         }
 
         for (r, &(a, _)) in r.iter_mut().zip(pairs.iter()) {
-            coeffs = doubling_step::<F>(r, ecc_chip.field_chip(), ctx).to_vec();
-
-            f = ell::<F>(f, &coeffs, a, &fp12_chip, ctx, j < 2);
-            if j < 2 {
-                // let rt = r.to_affine(ecc_chip.field_chip(), ctx);
-                // println!(
-                //     "[circuit] double(r): ({:?} {:?})",
-                //     ecc_chip.field_chip().get_assigned_value(&rt.x.clone().into()),
-                //     ecc_chip.field_chip().get_assigned_value(&rt.y.clone().into())
-                // );
-                println!(
-                    "[circuit] coeffs: {:?}",
-                    coeffs
-                        .iter()
-                        .map(|ee| ecc_chip.field_chip().get_assigned_value(&ee.into()))
-                        .collect_vec()
-                );
-                println!(
-                    "[circuit] double -> ell(f): {:?}",
-                    fp12_chip.get_assigned_value(&f.clone().into())
-                );
-                println!("-------- pair");
-            }
-        }
-        if j < 2 {
-            // println!(
-            //     "[circuit] double -> ell(f): {:?}",
-            //     fp12_chip.get_assigned_value(&f.clone().into())
-            // );
-            println!("--------------------- double");
+            coeffs = doubling_step::<F>(ecc_chip.field_chip(), ctx, r, true);
+            f = ell::<F>(f, &coeffs, a, &fp12_chip, ctx);
         }
 
-        if i {
+        if bit {
             for (r, &(a, b)) in r.iter_mut().zip(pairs.iter()) {
-                coeffs = addition_step::<F>(r, b, ecc_chip.field_chip(), ctx).to_vec();
-                f = ell::<F>(f, &coeffs, a, &fp12_chip, ctx, j < 2);
-
-                if j < 2 {
-                    // let rt = r.to_affine(ecc_chip.field_chip(), ctx);
-                    // println!(
-                    //     "[circuit] add(r): ({:?} {:?})",
-                    //     ecc_chip.field_chip().get_assigned_value(&rt.x.clone().into()),
-                    //     ecc_chip.field_chip().get_assigned_value(&rt.y.clone().into())
-                    // );
-                    println!(
-                        "[circuit] coeffs: {:?}",
-                        coeffs
-                            .iter()
-                            .map(|ee| ecc_chip.field_chip().get_assigned_value(&ee.into()))
-                            .collect_vec()
-                    );
-                    println!(
-                        "[circuit] add -> ell(f): {:?}",
-                        fp12_chip.get_assigned_value(&f.clone().into())
-                    );
-                    println!("-------- pair");
-                }
-            }
-
-            if j < 2 {
-                // println!(
-                //     "[circuit] add -> ell(f): {:?}",
-                //     fp12_chip.get_assigned_value(&f.clone().into())
-                // );
-                println!("--------------------- add");
+                coeffs = addition_step::<F>(ecc_chip.field_chip(), ctx, r, b, true);
+                f = ell::<F>(f, &coeffs, a, &fp12_chip, ctx);
             }
         }
 
-        // f.square()
-        if j < 2 {
-            println!(
-                "[circuit] sim square(f): {:?}",
-                fp12_chip.get_assigned_value(&f.clone().into()).square()
-            );
-        }
-        // f = fp12_chip.load_private(ctx, fp12_chip.get_assigned_value(&f.clone().into()).square());
-        f = fq12_mul(&fp12_chip, ctx, &f, &f);
-        if j < 2 {
-            println!("[circuit] square(f): {:?}", fp12_chip.get_assigned_value(&f.clone().into()));
-            println!("--------------------- square");
-        }
+        f = fp12_chip.mul(ctx, &f, &f);
 
         j += 1;
     }
@@ -416,8 +455,8 @@ pub fn multi_miller_loop_BLS<F: PrimeField>(
     println!("[circuit] f -> loop = {:?}", fp12_chip.get_assigned_value(&f.clone().into()));
 
     for (r, &(a, _)) in r.iter_mut().zip(pairs.iter()) {
-        coeffs = doubling_step::<F>(r, ecc_chip.field_chip(), ctx).to_vec();
-        f = ell::<F>(f, &coeffs, a, &fp12_chip, ctx, false);
+        coeffs = doubling_step::<F>(ecc_chip.field_chip(), ctx, r, true);
+        f = ell::<F>(f, &coeffs, a, &fp12_chip, ctx);
     }
 
     if BLS_X_IS_NEGATIVE {
@@ -435,7 +474,6 @@ fn ell<'chip, F: PrimeField>(
     p: &EcPoint<F, FpPoint<F>>,
     fp12_chip: &Fp12Chip<'chip, F>,
     ctx: &mut Context<F>,
-    debug: bool,
 ) -> FqPoint<F> {
     let c00 = &coeffs[0].0[0];
     let c01 = &coeffs[0].0[1];
@@ -456,7 +494,6 @@ fn ell<'chip, F: PrimeField>(
         FieldVector(vec![c00, c01]),
         &fp2_chip,
         ctx,
-        debug,
     )
 }
 
@@ -469,29 +506,8 @@ fn fq12_mul_by_014<'chip, F: PrimeField>(
     c4: FqPoint<F>,
     fp2_chip: &Fp2Chip<'chip, F>,
     ctx: &mut Context<F>,
-    debug: bool,
 ) -> FqPoint<F> {
     let fp6_chip = Fp6Chip::<F>::new(fp2_chip.fp_chip());
-
-    // println!(
-    //     "t0: ({:?}, {:?}, {:?})",
-    //     fp2_chip.get_assigned_value(&t00.clone().into()),
-    //     fp2_chip.get_assigned_value(&t01.clone().into()),
-    //     fp2_chip.get_assigned_value(&t02.clone().into()),
-    // );
-    /*
-          let t0 = self.fq6_mul_by_01(&x.0, c0, c1);
-           let t1 = self.fq6_mul_by_1(&x.1, c4);
-           let o = self.fq2_add(c1, c4);
-
-           let x0 = self.fq6_mul_by_nonresidue(&t1);
-           let x0 = self.fq6_add(&x0, &t0);
-
-           let x1 = self.fq6_add(&x.0, &x.1);
-           let x1 = self.fq6_mul_by_01(&x1, c0, &o);
-           let x1 = self.fq6_sub(&x1, &t0);
-           let x1 = self.fq6_sub(&x1, &t1);
-    */
 
     let fc0 = FieldVector(permute_vector(&f.0, &[0, 6, 2, 8, 4, 10]));
     let fc1 = FieldVector(permute_vector(&f.0, &[1, 7, 3, 9, 5, 11]));
@@ -511,29 +527,6 @@ fn fq12_mul_by_014<'chip, F: PrimeField>(
     let x1 = fp6_chip.sub_no_carry(ctx, x1, t1);
     let x1 = fp6_chip.carry_mod(ctx, x1);
 
-    if debug {
-        println!(
-            "[circuit] x0: ({:?}, {:?}, {:?})",
-            fp2_chip.get_assigned_value(&FieldVector(x0.0[..2].to_vec()).into()),
-            fp2_chip.get_assigned_value(&FieldVector(x0.0[2..4].to_vec()).into()),
-            fp2_chip.get_assigned_value(&FieldVector(x0.0[4..6].to_vec()).into()),
-        );
-        println!(
-            "[circuit] x1: ({:?}, {:?}, {:?})",
-            fp2_chip.get_assigned_value(&FieldVector(x1.0[..2].to_vec()).into()),
-            fp2_chip.get_assigned_value(&FieldVector(x1.0[2..4].to_vec()).into()),
-            fp2_chip.get_assigned_value(&FieldVector(x1.0[4..6].to_vec()).into()),
-        );
-        // println!(
-        //     "vector: {:?}",
-        //     x0.0.clone()
-        //         .into_iter()
-        //         .chain(x1.0.clone())
-        //         .map(|e| fp2_chip.fp_chip().get_assigned_value(&e.into()))
-        //         .collect_vec()
-        // );
-    }
-
     let c = x0.0.clone().into_iter().chain(x1.0.clone()).collect_vec();
 
     FieldVector(
@@ -546,58 +539,6 @@ fn fq12_mul_by_014<'chip, F: PrimeField>(
 
 pub fn permute_vector<T: Clone>(v1: &Vec<T>, indexes: &[usize]) -> Vec<T> {
     indexes.iter().map(|i| v1[*i].clone()).collect()
-}
-
-pub fn fq12_mul<'chip, F: ScalarField>(
-    fp12_chip: &Fp12Chip<'chip, F>,
-    ctx: &mut Context<F>,
-    a: &FqPoint<F>,
-    b: &FqPoint<F>,
-) -> FqPoint<F> {
-    let fp6_chip = FieldVectorChip::<F, FpChip<F>>::new(fp12_chip.fp_chip());
-    let fp2_chip = Fp2Chip::<F>::new(fp12_chip.fp_chip());
-
-    let a = (
-        FieldVector(permute_vector(&a.0, &[0, 6, 2, 8, 4, 10])),
-        FieldVector(permute_vector(&a.0, &[1, 7, 3, 9, 5, 11])),
-    );
-    let b = (
-        FieldVector(permute_vector(&b.0, &[0, 6, 2, 8, 4, 10])),
-        FieldVector(permute_vector(&b.0, &[1, 7, 3, 9, 5, 11])),
-    );
-
-    let ab00 = fq6_mul(&fp2_chip, ctx, &a.0, &b.0);
-    let ab11 = fq6_mul(&fp2_chip, ctx, &a.1, &b.1);
-
-    let a01 = {
-        let tv = fp6_chip.add_no_carry(ctx, a.0.clone(), a.1.clone());
-        fp6_chip.carry_mod(ctx, tv)
-    };
-    let b01 = {
-        let tv = fp6_chip.add_no_carry(ctx, b.0.clone(), b.1.clone());
-        fp6_chip.carry_mod(ctx, tv)
-    };
-    let c1 = fq6_mul(&fp2_chip, ctx, &a01, &b01);
-    let c1 = fp6_chip.sub_no_carry(ctx, c1, ab00.clone());
-    let c1 = {
-        let tv = fp6_chip.sub_no_carry(ctx, c1, ab11.clone());
-        fp6_chip.carry_mod(ctx, tv)
-    };
-
-    let ab11 = fq6_mul_by_nonresidue(&ab11, &fp2_chip, ctx);
-    let c0 = {
-        let tv = fp6_chip.add_no_carry(ctx, ab00, ab11);
-        fp6_chip.carry_mod(ctx, tv)
-    };
-
-    let c = c0.0.into_iter().chain(c1.0).collect_vec();
-
-    FieldVector(
-        permute_vector(&c, &[0, 6, 2, 8, 4, 10])
-            .into_iter()
-            .chain(permute_vector(&c, &[1, 7, 3, 9, 5, 11]))
-            .collect_vec(),
-    )
 }
 
 pub fn fq6_mul<'chip, F: ScalarField>(
@@ -651,42 +592,6 @@ pub fn fq6_mul<'chip, F: ScalarField>(
     };
 
     FieldVector(c0.0.into_iter().chain(c1.0).chain(c2.0).collect())
-}
-
-fn fq12_mul_by_034<'chip, F: PrimeField>(
-    fp2_chip: &Fp2Chip<'chip, F>,
-    ctx: &mut Context<F>,
-    f: FqPoint<F>,
-    c0: FqPoint<F>,
-    c3: FqPoint<F>,
-    c4: FqPoint<F>,
-) -> FqPoint<F> {
-    let fp6_chip = Fp6Chip::<F>::new(fp2_chip.fp_chip());
-
-    let t00 = fp2_chip.mul(ctx, FieldVector(f.0[..2].to_vec()), c0.clone());
-    let t01 = fp2_chip.mul(ctx, FieldVector(f.0[2..4].to_vec()), c0.clone());
-    let t02 = fp2_chip.mul(ctx, FieldVector(f.0[4..6].to_vec()), c0.clone());
-
-    let t0 = FieldVector(t00.0.into_iter().chain(t01.0).chain(t02.0).collect());
-    let t1 = fq6_mul_by_01(t0.clone(), c3.clone(), c4.clone(), fp2_chip, ctx);
-    let t2 = {
-        let tv = fp6_chip.add_no_carry(
-            ctx,
-            FieldVector(f.0[..6].to_vec()),
-            FieldVector(f.0[6..12].to_vec()),
-        );
-        fp6_chip.carry_mod(ctx, tv)
-    };
-    let o = fp2_chip.add(ctx, c0.clone(), c3.clone());
-    let t2 = fq6_mul_by_01(t2, o, c4.clone(), fp2_chip, ctx);
-    let t2 = fp6_chip.sub_no_carry(ctx, t2, t0.clone());
-    let x1 = fp6_chip.sub_no_carry(ctx, t2, t1);
-    let t1 = fq6_mul_by_nonresidue(&t0, fp2_chip, ctx);
-    let x0 = fp6_chip.add_no_carry(ctx, t0, t1);
-    let x0 = fp6_chip.carry_mod(ctx, x0);
-    let x1 = fp6_chip.carry_mod(ctx, x1);
-
-    FieldVector(x0.0.into_iter().chain(x1.0).collect())
 }
 
 fn fq6_mul_by_01<'chip, F: PrimeField>(
@@ -809,16 +714,17 @@ impl<F: PrimeField> EcProjective<F> {
 }
 
 fn addition_step<'chip, F: PrimeField>(
-    r: &mut EcProjective<F>,
-    q: &EcPoint<F, FqPoint<F>>,
     fp2_chip: &Fp2Chip<'chip, F>,
     ctx: &mut Context<F>,
-) -> [FqPoint<F>; 3] {
+    r: &mut EcProjective<F>,
+    p: &EcPoint<F, FqPoint<F>>,
+    with_coeffs: bool,
+) -> Vec<FqPoint<F>> {
     let zsq = fp2_chip.mul(ctx, &r.z, &r.z);
-    let ysq = fp2_chip.mul(ctx, q.y(), q.y());
-    let tv0 = fp2_chip.mul(ctx, &zsq, q.x());
+    let ysq = fp2_chip.mul(ctx, p.y(), p.y());
+    let tv0 = fp2_chip.mul(ctx, &zsq, p.x());
     let tv1 = {
-        let tv = fp2_chip.add_no_carry(ctx, q.y(), &r.z);
+        let tv = fp2_chip.add_no_carry(ctx, p.y(), &r.z);
         let tv = fp2_chip.carry_mod(ctx, tv);
         let tv = fp2_chip.mul(ctx, &tv, &tv);
         let tv = fp2_chip.sub_no_carry(ctx, tv, &ysq);
@@ -837,7 +743,7 @@ fn addition_step<'chip, F: PrimeField>(
         let tv = fp2_chip.sub_no_carry(ctx, tv, &r.y);
         fp2_chip.carry_mod(ctx, tv)
     };
-    let tv9 = fp2_chip.mul(ctx, &tv6, q.x());
+    let tv9 = fp2_chip.mul(ctx, &tv6, p.x());
     let tv7 = fp2_chip.mul(ctx, &tv4, &r.x);
     let xout = {
         let tv = fp2_chip.mul(ctx, &tv6, &tv6);
@@ -854,7 +760,7 @@ fn addition_step<'chip, F: PrimeField>(
         let tv = fp2_chip.sub_no_carry(ctx, tv, &tv3);
         fp2_chip.carry_mod(ctx, tv)
     };
-    let tv10 = fp2_chip.add_no_carry(ctx, q.y(), &zout);
+    let tv10 = fp2_chip.add_no_carry(ctx, p.y(), &zout);
     let tv8 = {
         let tv = fp2_chip.sub_no_carry(ctx, &tv7, &xout);
         let tv = fp2_chip.carry_mod(ctx, tv);
@@ -866,13 +772,9 @@ fn addition_step<'chip, F: PrimeField>(
 
     *r = EcProjective { x: xout.clone(), y: yout.clone(), z: zout.clone() };
 
-    // let t10 = t10.square() - ysquared;
-    // let ztsquared = r.z.square();
-    // let t10 = t10 - ztsquared;
-    // let t9 = t9 + t9 - t10;
-    // let t10 = r.z + r.z;
-    // let t6 = -t6;
-    // let t1 = t6 + t6;
+    if !with_coeffs {
+        return vec![];
+    }
 
     let tv10 = {
         let tv = fp2_chip.mul(ctx, &tv10, &tv10);
@@ -886,14 +788,15 @@ fn addition_step<'chip, F: PrimeField>(
     let tv6 = fp2_chip.negate(ctx, tv6);
     let tv1 = fp2_chip.add(ctx, &tv6, &tv6);
 
-    [tv10, tv1, tv9]
+    vec![tv10, tv1, tv9]
 }
 
 fn doubling_step<'chip, F: PrimeField>(
-    P: &mut EcProjective<F>,
     fp2_chip: &Fp2Chip<'chip, F>,
     ctx: &mut Context<F>,
-) -> [FqPoint<F>; 3] {
+    P: &mut EcProjective<F>,
+    with_coeffs: bool,
+) -> Vec<FqPoint<F>> {
     let x = P.x.clone();
     let y = P.y.clone();
     let z = P.z.clone();
@@ -944,6 +847,10 @@ fn doubling_step<'chip, F: PrimeField>(
 
     *P = EcProjective { x: xout, y: yout, z: zout };
 
+    if !with_coeffs {
+        return vec![];
+    }
+
     let tv3 = fp2_chip.mul(ctx, &tv4, &zsq);
     let tv3 = fp2_chip.add(ctx, &tv3, &tv3);
     let tv3 = fp2_chip.negate(ctx, tv3);
@@ -958,105 +865,7 @@ fn doubling_step<'chip, F: PrimeField>(
     let tv0 = fp2_chip.mul(ctx, &P.z, zsq);
     let tv0 = fp2_chip.add(ctx, &tv0, &tv0);
 
-    [tv0, tv3, tv6]
-}
-
-// let pairs = [(a_i, b_i)], a_i in G_1, b_i in G_2
-// output is Prod_i e'(a_i, b_i), where e'(a_i, b_i) is the output of `miller_loop_BN(b_i, a_i)`
-pub fn multi_miller_loop_BN<F: PrimeField>(
-    ecc_chip: &EccChip<F, Fp2Chip<F>>,
-    ctx: &mut Context<F>,
-    pairs: Vec<(&EcPoint<F, FpPoint<F>>, &EcPoint<F, FqPoint<F>>)>,
-    pseudo_binary_encoding: &[i8],
-) -> FqPoint<F> {
-    let mut i = pseudo_binary_encoding.len() - 1;
-    while pseudo_binary_encoding[i] == 0 {
-        i -= 1;
-    }
-    let last_index = i;
-    assert_eq!(pseudo_binary_encoding[last_index], 1);
-
-    let neg_b = pairs.iter().map(|pair| ecc_chip.negate(ctx, pair.1)).collect::<Vec<_>>();
-
-    let fp_chip = ecc_chip.field_chip.fp_chip();
-    // initialize the first line function into Fq12 point
-    let mut f = {
-        let sparse_f =
-            sparse_line_function_equal::<F>(ecc_chip.field_chip(), ctx, pairs[0].1, pairs[0].0);
-        assert_eq!(sparse_f.len(), 6);
-
-        let zero_fp = fp_chip.load_constant(ctx, Fq::zero());
-        let mut f_coeffs = Vec::with_capacity(12);
-        for coeff in &sparse_f {
-            if let Some(fp2_point) = coeff {
-                f_coeffs.push(fp2_point[0].clone());
-            } else {
-                f_coeffs.push(zero_fp.clone());
-            }
-        }
-        for coeff in &sparse_f {
-            if let Some(fp2_point) = coeff {
-                f_coeffs.push(fp2_point[1].clone());
-            } else {
-                f_coeffs.push(zero_fp.clone());
-            }
-        }
-        FieldVector(f_coeffs)
-    };
-    for &(a, b) in pairs.iter().skip(1) {
-        f = fp12_multiply_with_line_equal::<F>(ecc_chip.field_chip(), ctx, &f, b, a);
-    }
-
-    i -= 1;
-    let mut r = pairs.iter().map(|pair| pair.1.clone()).collect::<Vec<_>>();
-    let fp12_chip = Fp12Chip::<F>::new(fp_chip);
-    loop {
-        if i != last_index - 1 {
-            f = fp12_chip.mul(ctx, &f, &f);
-            for (r, &(a, _)) in r.iter().zip(pairs.iter()) {
-                f = fp12_multiply_with_line_equal::<F>(ecc_chip.field_chip(), ctx, &f, r, a);
-            }
-        }
-        for r in r.iter_mut() {
-            *r = ecc_chip.double(ctx, r.clone());
-        }
-
-        assert!(pseudo_binary_encoding[i] <= 1 && pseudo_binary_encoding[i] >= -1);
-        if pseudo_binary_encoding[i] != 0 {
-            for ((r, neg_b), &(a, b)) in r.iter_mut().zip(neg_b.iter()).zip(pairs.iter()) {
-                let sign_b = if pseudo_binary_encoding[i] == 1 { b } else { neg_b };
-                f = fp12_multiply_with_line_unequal::<F>(
-                    ecc_chip.field_chip(),
-                    ctx,
-                    &f,
-                    (r, sign_b),
-                    a,
-                );
-                *r = ecc_chip.add_unequal(ctx, r.clone(), sign_b, false);
-            }
-        }
-        if i == 0 {
-            break;
-        }
-        i -= 1;
-    }
-
-    // Frobenius coefficient coeff[1][j] = ((9+u)^{(p-1)/6})^j
-    // load coeff[1][2], coeff[1][3]
-    let c2 = FROBENIUS_COEFF_FQ12_C1[1] * FROBENIUS_COEFF_FQ12_C1[1];
-    let c3 = c2 * FROBENIUS_COEFF_FQ12_C1[1];
-    let c2 = ecc_chip.field_chip.load_constant(ctx, c2);
-    let c3 = ecc_chip.field_chip.load_constant(ctx, c3);
-
-    // finish multiplying remaining line functions outside the loop
-    for (r, (a, b)) in r.iter_mut().zip(pairs) {
-        let b_1 = twisted_frobenius(ecc_chip, ctx, b, &c2, &c3);
-        let neg_b_2 = neg_twisted_frobenius(ecc_chip, ctx, &b_1, &c2, &c3);
-        f = fp12_multiply_with_line_unequal(ecc_chip.field_chip(), ctx, &f, (r, &b_1), a);
-        *r = ecc_chip.add_unequal(ctx, r.clone(), b_1, false);
-        f = fp12_multiply_with_line_unequal::<F>(ecc_chip.field_chip(), ctx, &f, (r, &neg_b_2), a);
-    }
-    f
+    vec![tv0, tv3, tv6]
 }
 
 // Frobenius coefficient coeff[1][j] = ((9+u)^{(p-1)/6})^j
@@ -1166,12 +975,9 @@ impl<'chip, F: PrimeField> PairingChip<'chip, F> {
     ) -> FqPoint<F> {
         let fp2_chip = Fp2Chip::<F>::new(self.fp_chip);
         let g2_chip = EccChip::new(&fp2_chip);
-        let f = multi_miller_loop_BLS::<F>(&g2_chip, ctx, pairs);
+        let f = multi_miller_loop_BN::<F>(&g2_chip, ctx, pairs);
         let fp12_chip = Fp12Chip::<F>::new(self.fp_chip);
 
-        // println!("f = {:?}", fp12_chip.get_assigned_value(&f.clone().into()));
-
-        // println!("----------- end ----------");
         f
     }
 

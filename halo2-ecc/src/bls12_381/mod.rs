@@ -11,7 +11,7 @@ pub type FpChip<'range, F> = fp::FpChip<'range, F, Fq>;
 pub type FpPoint<F> = ProperCrtUint<F>;
 pub type FqPoint<F> = FieldVector<FpPoint<F>>;
 pub type Fp2Chip<'chip, F> = fp2::Fp2Chip<'chip, F, FpChip<'chip, F>, Fq2>;
-pub type Fp12Chip<'chip, F> = fp12::Fp12Chip<'chip, F, FpChip<'chip, F>, Fq12, 9>;
+pub type Fp12Chip<'chip, F> = fp12::Fp12Chip<'chip, F, FpChip<'chip, F>, Fq12, 1>;
 
 #[cfg(test)]
 pub(crate) mod tests;

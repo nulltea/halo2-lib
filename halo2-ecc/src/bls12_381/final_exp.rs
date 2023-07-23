@@ -1,6 +1,5 @@
 use super::pairing::{fq2_mul_by_nonresidue, permute_vector};
 use super::{Fp12Chip, Fp2Chip, FpChip, FqPoint};
-use crate::bls12_381::pairing::fq12_mul;
 use crate::halo2_proofs::arithmetic::Field;
 use crate::{
     ecc::get_naf,
@@ -11,7 +10,7 @@ use halo2curves::bls12_381::{Fq, Fq12, Fq2, BLS_X, FROBENIUS_COEFF_FQ12_C1};
 use itertools::Itertools;
 use num_bigint::BigUint;
 
-const XI_0: i64 = 9;
+const XI_0: i64 = 1;
 
 impl<'chip, F: PrimeField> Fp12Chip<'chip, F> {
     // computes a ** (p ** power)
@@ -78,14 +77,14 @@ impl<'chip, F: PrimeField> Fp12Chip<'chip, F> {
 
         for &z in naf.iter().rev() {
             if is_started {
-                res = fq12_mul(self, ctx, &res, &res);
+                res = self.mul(ctx, &res, &res);
             }
 
             if z != 0 {
                 assert!(z == 1 || z == -1);
                 if is_started {
                     res = if z == 1 {
-                        fq12_mul(self, ctx, &res, a)
+                        self.mul(ctx, &res, a)
                     } else {
                         self.divide_unsafe(ctx, &res, a)
                     };
@@ -262,158 +261,26 @@ impl<'chip, F: PrimeField> Fp12Chip<'chip, F> {
         [h2, h3, h4, h5].into_iter().map(|h| fp2_chip.carry_mod(ctx, h)).collect()
     }
 
-    fn devide(&self, ctx: &mut Context<F>, a: &FqPoint<F>, b: &FqPoint<F>) -> FqPoint<F> {
-        let a = a.into();
-        let b = b;
-        let a_val = self.get_assigned_value(&a);
-        let b_val = self.get_assigned_value(&b.into());
-        let b_inv: Fq12 = Option::from(b_val.invert()).unwrap_or_default();
-        let quot_val = a_val * b_inv;
-
-        let quot = self.load_private(ctx, quot_val);
-
-        // constrain quot * b - a = 0 mod p
-        let quot_b = self.mul(ctx, &quot, b);
-        let quot_constraint = self.sub_no_carry(ctx, quot_b, a);
-        self.check_carry_mod_to_zero(ctx, quot_constraint);
-
-        quot
-    }
-
-    pub fn cyclotomic_square_bls(&self, ctx: &mut Context<F>, f: &FqPoint<F>) -> FqPoint<F> {
-        let z0 = FieldVector(permute_vector(&f.0, &[0, 6]));
-        let z4 = FieldVector(permute_vector(&f.0, &[2, 8]));
-        let z3 = FieldVector(permute_vector(&f.0, &[4, 10]));
-        let z2 = FieldVector(permute_vector(&f.0, &[1, 7]));
-        let z1 = FieldVector(permute_vector(&f.0, &[3, 9]));
-        let z5 = FieldVector(permute_vector(&f.0, &[5, 11]));
-
-        let fp_chip = self.fp_chip();
-        let fp2_chip = Fp2Chip::<F>::new(fp_chip);
-        let (t0, t1) = self.fp4_square(ctx, &z0, &z1);
-
-        // For A
-        let z0 = fp2_chip.sub_no_carry(ctx, &t0, &z0);
-        let z0 = fp2_chip.add_no_carry(ctx, &z0, &z0);
-        let z0 = fp2_chip.add(ctx, &z0, &t0);
-
-        let z1 = fp2_chip.add_no_carry(ctx, &t1, &z1);
-        let z1 = fp2_chip.add_no_carry(ctx, &z1, &z1);
-        let z1 = fp2_chip.add(ctx, &z1, &t1);
-
-        let (t0, t1) = self.fp4_square(ctx, &z2, &z3);
-        let (t2, t3) = self.fp4_square(ctx, &z4, &z5);
-
-        // For C
-        let z4 = fp2_chip.sub_no_carry(ctx, &t0, &z4);
-        let z4 = fp2_chip.add_no_carry(ctx, &z4, &z4);
-        let z4 = fp2_chip.add(ctx, &z4, &t0);
-
-        let z5 = fp2_chip.add_no_carry(ctx, &t1, &z5);
-        let z5 = fp2_chip.add_no_carry(ctx, &z5, &z5);
-        let z5 = fp2_chip.add(ctx, &z5, &t1);
-
-        // For B
-        let t0 = fq2_mul_by_nonresidue(&t3, self.fp_chip(), ctx);
-        let z2 = fp2_chip.add_no_carry(ctx, &t0, &z2);
-        let z2 = fp2_chip.add_no_carry(ctx, &z2, &z2);
-        let z2 = fp2_chip.add(ctx, &z2, &t0);
-
-        let z3 = fp2_chip.sub_no_carry(ctx, &t2, &z3);
-        let z3 = fp2_chip.add_no_carry(ctx, &z3, &z3);
-        let z3 = fp2_chip.add(ctx, &z3, &t2);
-
-        let c =
-            z0.0.into_iter()
-                .chain(z4.0)
-                .chain(z3.0)
-                .chain(z2.0)
-                .chain(z1.0)
-                .chain(z5.0)
-                .collect_vec();
-
-        FieldVector(
-            permute_vector(&c, &[0, 6, 2, 8, 4, 10])
-                .into_iter()
-                .chain(permute_vector(&c, &[1, 7, 3, 9, 5, 11]))
-                .collect_vec(),
-        )
-    }
-
-    fn fp4_square(
-        &self,
-        ctx: &mut Context<F>,
-        a: &FqPoint<F>,
-        b: &FqPoint<F>,
-    ) -> (FqPoint<F>, FqPoint<F>) {
-        let fp2_chip = Fp2Chip::<F>::new(self.fp_chip());
-        let t0 = fp2_chip.mul(ctx, a, a);
-        let t1 = fp2_chip.mul(ctx, b, b);
-
-        let t2 = fq2_mul_by_nonresidue(&t1, self.fp_chip(), ctx);
-        let c0 = fp2_chip.add(ctx, &t2, &t0);
-        let t2 = fp2_chip.add(ctx, a, b);
-        let t2 = fp2_chip.mul(ctx, &t2, &t2);
-        let t2 = fp2_chip.sub_no_carry(ctx, &t2, &t0);
-        let c1 = fp2_chip.sub(ctx, &t2, &t1);
-
-        (c0, c1)
-    }
-
-    // exp is in little-endian
     /// # Assumptions
     /// * `a` is a nonzero element in the cyclotomic subgroup
-    pub fn cyclotomic_pow(&self, ctx: &mut Context<F>, a: FqPoint<F>, exp: Vec<u64>) -> FqPoint<F> {
-        let mut compression = self.cyclotomic_compress(&a);
-        let mut out = None;
-        let mut is_started = false;
-        let naf = get_naf(exp);
-
-        for &z in naf.iter().rev() {
-            if is_started {
-                compression = self.cyclotomic_square(ctx, &compression);
-            }
-            if z != 0 {
-                assert!(z == 1 || z == -1);
-                if is_started {
-                    let mut res = self.cyclotomic_decompress(ctx, compression);
-                    res = if z == 1 {
-                        fq12_mul(self, ctx, &res, &a)
-                    } else {
-                        self.divide_unsafe(ctx, &res, &a)
-                    };
-                    // compression is free, so it doesn't hurt (except possibly witness generation runtime) to do it
-                    // TODO: alternatively we go from small bits to large to avoid this compression
-                    compression = self.cyclotomic_compress(&res);
-                    out = Some(res);
-                } else {
-                    assert_eq!(z, 1);
-                    is_started = true;
-                }
-            }
-        }
-        if naf[0] == 0 {
-            out = Some(self.cyclotomic_decompress(ctx, compression));
-        }
-        out.unwrap_or(a)
-    }
-
-    pub fn cyclotomic_pow_bls(&self, ctx: &mut Context<F>, a: FqPoint<F>, exp: u64) -> FqPoint<F> {
-        let mut tv_a = self.load_private(ctx, Fq12::one());
+    pub fn cyclotomic_pow(&self, ctx: &mut Context<F>, a: FqPoint<F>, exp: u64) -> FqPoint<F> {
+        let mut res = self.load_private(ctx, Fq12::one());
         let mut found_one = false;
 
-        for i in (0..64).rev().map(|b| ((exp >> b) & 1) == 1) {
+        for bit in (0..64).rev().map(|i| ((exp >> i) & 1) == 1) {
             if found_one {
-                tv_a = self.cyclotomic_square_bls(ctx, &tv_a);
+                let compressed = self.cyclotomic_square(ctx, &self.cyclotomic_compress(&res));
+                res = self.cyclotomic_decompress(ctx, compressed);
             } else {
-                found_one = i;
+                found_one = bit;
             }
-            if i {
-                tv_a = fq12_mul(self, ctx, &tv_a, &a)
+
+            if bit {
+                res = self.mul(ctx, &res, &a);
             }
         }
 
-        self.conjugate(ctx, tv_a)
+        self.conjugate(ctx, res)
     }
 
     // out = in^{(q^12 - 1)/r}
@@ -425,37 +292,42 @@ impl<'chip, F: PrimeField> Fp12Chip<'chip, F> {
         // a^{q^6} = conjugate of a
         let f1 = self.conjugate(ctx, a.clone());
         let f2 = self.divide_unsafe(ctx, &f1, a);
+        println!("[circuit] final_exp f2 = {:?}", self.get_assigned_value(&f2.clone().into()));
         let f3 = self.frobenius_map(ctx, &f2, 2);
         // self.mul(ctx, &f3, &f2)
-        let t2 = fq12_mul(self, ctx, &f3, &f2);
+        let t2 = self.mul(ctx, &f3, &f2);
 
         let t1: FieldVector<crate::bigint::ProperCrtUint<F>> = {
-            let tv = self.cyclotomic_square_bls(ctx, &t2);
+            let tv = self.cyclotomic_square(ctx, &self.cyclotomic_compress(&t2));
+            let tv = self.cyclotomic_decompress(ctx, tv);
             self.conjugate(ctx, tv)
         };
 
-        let t3 = self.cyclotomic_pow_bls(ctx, t2.clone(), BLS_X);
+        let t3 = self.cyclotomic_pow(ctx, t2.clone(), BLS_X);
 
-        let t4 = self.cyclotomic_square_bls(ctx, &t3);
-        let t5 = fq12_mul(self, ctx, &t1, &t3);
-        let t1 = self.cyclotomic_pow_bls(ctx, t5.clone(), BLS_X);
-        let t0 = self.cyclotomic_pow_bls(ctx, t1.clone(), BLS_X);
-        let t6 = self.cyclotomic_pow_bls(ctx, t0.clone(), BLS_X);
-        let t6 = fq12_mul(self, ctx, &t6, &t4);
-        let t4 = self.cyclotomic_pow_bls(ctx, t6.clone(), BLS_X);
+        let t4 = {
+            let tv = self.cyclotomic_square(ctx, &self.cyclotomic_compress(&t3));
+            self.cyclotomic_decompress(ctx, tv)
+        };
+        let t5 = self.mul(ctx, &t1, &t3);
+        let t1 = self.cyclotomic_pow(ctx, t5.clone(), BLS_X);
+        let t0 = self.cyclotomic_pow(ctx, t1.clone(), BLS_X);
+        let t6 = self.cyclotomic_pow(ctx, t0.clone(), BLS_X);
+        let t6 = self.mul(ctx, &t6, &t4);
+        let t4 = self.cyclotomic_pow(ctx, t6.clone(), BLS_X);
         let t5 = self.conjugate(ctx, t5);
-        let t4 = fq12_mul(self, ctx, &t4, &t5);
-        let t4 = fq12_mul(self, ctx, &t4, &t2);
+        let t4 = self.mul(ctx, &t4, &t5);
+        let t4 = self.mul(ctx, &t4, &t2);
         let t5 = self.conjugate(ctx, t2.clone());
-        let t1 = fq12_mul(self, ctx, &t1, &t2);
+        let t1 = self.mul(ctx, &t1, &t2);
 
         let t1 = self.frobenius_map(ctx, &t1, 3);
-        let t6 = fq12_mul(self, ctx, &t6, &t5);
+        let t6 = self.mul(ctx, &t6, &t5);
         let t6 = self.frobenius_map(ctx, &t6, 1);
-        let t3 = fq12_mul(self, ctx, &t3, &t0);
+        let t3 = self.mul(ctx, &t3, &t0);
         let t3 = self.frobenius_map(ctx, &t3, 2);
-        let t3 = fq12_mul(self, ctx, &t3, &t1);
-        let t3 = fq12_mul(self, ctx, &t3, &t6);
-        fq12_mul(self, ctx, &t3, &t4)
+        let t3 = self.mul(ctx, &t3, &t1);
+        let t3 = self.mul(ctx, &t3, &t6);
+        self.mul(ctx, &t3, &t4)
     }
 }

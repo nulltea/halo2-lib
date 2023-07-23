@@ -211,8 +211,10 @@ impl<'chip, F: PrimeField> BlsSignatureChipTrait<'chip, F> for BlsSignatureChip<
         let multi_paired = self
             .pairing_chip
             .multi_miller_loop(ctx, vec![(&neg_g1, &signature), (&pubkey, &msghash)]);
-        let result = fp12_chip.final_exp(ctx, multi_paired);
-        println!("final exp res: {:?}", fp12_chip.get_assigned_value(&result.clone().into()));
-        fp12_chip.load_constant(ctx, Fq12::zero())
+        let res = fp12_chip.final_exp(ctx, multi_paired);
+        println!("[circuit] final exp res = {:?}", fp12_chip.get_assigned_value(&res.clone().into()));
+
+        // fp12_chip.load_constant(ctx, Fq12::one())
+        res
     }
 }

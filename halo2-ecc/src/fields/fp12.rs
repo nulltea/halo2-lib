@@ -249,7 +249,7 @@ mod bn254 {
 mod bls12_381 {
     use crate::{
         bls12_381::{
-            pairing::{fq12_mul, fq2_mul_by_nonresidue, fq6_mul, fq6_mul_by_nonresidue},
+            pairing::{fq2_mul_by_nonresidue, fq6_mul, fq6_mul_by_nonresidue},
             Fp12Chip, Fp2Chip, FpChip, FqPoint,
         },
         fields::{
@@ -289,59 +289,6 @@ mod bls12_381 {
         }
     }
 
-    impl<'chip, F: ScalarField> Fp12Chip<'chip, F> {
-        pub fn mul(&self, ctx: &mut Context<F>, a: &FqPoint<F>, b: &FqPoint<F>) -> FqPoint<F> {
-            let fp6_chip = FieldVectorChip::<F, FpChip<F>>::new(self.fp_chip());
-            let fp2_chip = Fp2Chip::<F>::new(self.fp_chip());
-
-            let a = (
-                FieldVector(permute_vector(&a.0, &[0, 6, 2, 8, 4, 10])),
-                FieldVector(permute_vector(&a.0, &[1, 7, 3, 9, 5, 11])),
-            );
-            let b = (
-                FieldVector(permute_vector(&b.0, &[0, 6, 2, 8, 4, 10])),
-                FieldVector(permute_vector(&b.0, &[1, 7, 3, 9, 5, 11])),
-            );
-
-            let ab00 = fq6_mul(&fp2_chip, ctx, &a.0, &b.0);
-            let ab11 = fq6_mul(&fp2_chip, ctx, &a.1, &b.1);
-
-            let a01 = {
-                let tv = fp6_chip.add_no_carry(ctx, a.0.clone(), a.1.clone());
-                fp6_chip.carry_mod(ctx, tv)
-            };
-            let b01 = {
-                let tv = fp6_chip.add_no_carry(ctx, b.0.clone(), b.1.clone());
-                fp6_chip.carry_mod(ctx, tv)
-            };
-            let c1 = fq6_mul(&fp2_chip, ctx, &a01, &b01);
-            let c1 = fp6_chip.sub_no_carry(ctx, c1, ab00.clone());
-            let c1 = {
-                let tv = fp6_chip.sub_no_carry(ctx, c1, ab11.clone());
-                fp6_chip.carry_mod(ctx, tv)
-            };
-
-            let ab11 = fq6_mul_by_nonresidue(&ab11, &fp2_chip, ctx);
-            let c0 = {
-                let tv = fp6_chip.add_no_carry(ctx, ab00, ab11);
-                fp6_chip.carry_mod(ctx, tv)
-            };
-
-            let c = c0.0.into_iter().chain(c1.0).collect_vec();
-
-            FieldVector(
-                permute_vector(&c, &[0, 6, 2, 8, 4, 10])
-                    .into_iter()
-                    .chain(permute_vector(&c, &[1, 7, 3, 9, 5, 11]))
-                    .collect_vec(),
-            )
-        }
-    }
-
-    fn permute_vector<T: Clone>(v1: &Vec<T>, indexes: &[usize]) -> Vec<T> {
-        indexes.iter().map(|i| v1[*i].clone()).collect()
-    }
-
     #[test]
     fn fq12_mul_test() {
         let a = Fq12::new([
@@ -377,12 +324,13 @@ mod bls12_381 {
         let mut ctx = Context::<Fr>::new(true, 0);
         let range_chip = RangeChip::<Fr>::new(halo2_base::gates::range::RangeStrategy::Vertical, 8);
         let fp_chip = FpChip::<Fr>::new(&range_chip, 112, 4);
-        let fp12_chip = super::Fp12Chip::<Fr, FpChip<Fr>, Fq12, 9>::new(&fp_chip);
+        let fp12_chip = super::Fp12Chip::<Fr, FpChip<Fr>, Fq12, 1>::new(&fp_chip);
 
         let a_assigned = fp12_chip.load_private(&mut ctx, a);
         let b_assigned = fp12_chip.load_private(&mut ctx, b);
 
-        let c = fq12_mul(&fp12_chip, &mut ctx, &a_assigned, &b_assigned);
+        // let c = fq12_mul(&fp12_chip, &mut ctx, &a_assigned, &b_assigned);
+        let c = fp12_chip.mul(&mut ctx, &a_assigned, &b_assigned);
         let c_value = fp12_chip.get_assigned_value(&c.into());
 
         let c_check = a * b;

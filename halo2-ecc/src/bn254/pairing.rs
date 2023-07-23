@@ -350,8 +350,12 @@ pub fn multi_miller_loop_BN<F: PrimeField>(
     let mut j = 0;
     let mut r = pairs.iter().map(|pair| pair.1.clone()).collect::<Vec<_>>();
     let fp12_chip = Fp12Chip::<F>::new(fp_chip);
+    println!("i: {}, last_index: {}", i, last_index);
+    println!("pseudo_binary_encoding: {:?}", pseudo_binary_encoding[i-1]);
     loop {
+        println!("i = {}", i);
         if i != last_index - 1 {
+            println!("squaring f");
             f = fp12_chip.mul(ctx, &f, &f);
             for (r, &(a, _)) in r.iter().zip(pairs.iter()) {
                 f = fp12_multiply_with_line_equal::<F>(ecc_chip.field_chip(), ctx, &f, r, a);
