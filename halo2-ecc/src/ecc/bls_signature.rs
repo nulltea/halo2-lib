@@ -5,8 +5,6 @@ use crate::{fields::{fp2::Fp2Chip, fp::FpChip, PrimeField, vector::FieldVector},
 use super::EcPoint;
 
 pub trait BlsSignatureChip<'chip, F: ScalarField> {
-    // fn new(fp_chip: &'chip FpChip<F, Fp>) -> Self;
-
     // Verifies that e(g1, signature) = e(pubkey, H(m)) by checking e(g1, signature)*e(pubkey, -H(m)) === 1
     // where e(,) is optimal Ate pairing
     // G1: {g1, pubkey}, G2: {signature, message}
@@ -18,5 +16,14 @@ pub trait BlsSignatureChip<'chip, F: ScalarField> {
         g1_gen: EcPoint<F, ProperCrtUint<F>>,
         ctx: &mut Context<F>,
         is_strict: bool,
+    ) -> FieldVector<ProperCrtUint<F>>;
+
+    fn verify_pairing(
+        &self,
+        signature: EcPoint<F, FieldVector<ProperCrtUint<F>>>,
+        msghash: EcPoint<F, FieldVector<ProperCrtUint<F>>>,
+        pubkey: EcPoint<F, ProperCrtUint<F>>,
+        g1_neg: EcPoint<F, ProperCrtUint<F>>,
+        ctx: &mut Context<F>,
     ) -> FieldVector<ProperCrtUint<F>>;
 }

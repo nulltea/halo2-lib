@@ -190,6 +190,7 @@ impl<'chip, F: PrimeField> BlsSignatureChipTrait<'chip, F> for BlsSignatureChip<
         let g1_chip = EccChip::new(self.fp_chip);
         let fp2_chip = Fp2Chip::<F>::new(self.fp_chip);
         let g2_chip = EccChip::new(&fp2_chip);
+
         if is_strict {
             g1_chip.assert_is_on_curve::<halo2curves::bls12_381::G1Affine>(ctx, &g1);
             g2_chip.assert_is_on_curve::<halo2curves::bls12_381::G2Affine>(ctx, &signature);
@@ -198,22 +199,29 @@ impl<'chip, F: PrimeField> BlsSignatureChipTrait<'chip, F> for BlsSignatureChip<
             g2_chip.assert_is_on_curve::<halo2curves::bls12_381::G2Affine>(ctx, &msghash);
 
             // Check Signature is in Subgroup G2
-
             self.assert_in_g2(ctx, &signature.clone());
             self.assert_in_g2(ctx, &msghash.clone());
         }
 
+        let g1_neg = g1_chip.negate(ctx, &g1);
+
+        self.verify_pairing(signature, msghash, pubkey, g1_neg, ctx)
+    }
+
+    fn verify_pairing(
+        &self,
+        signature: EcPoint<F, FieldVector<ProperCrtUint<F>>>,
+        msghash: EcPoint<F, FieldVector<ProperCrtUint<F>>>,
+        pubkey: EcPoint<F, ProperCrtUint<F>>,
+        g1_neg: EcPoint<F, ProperCrtUint<F>>,
+        ctx: &mut Context<F>,
+    ) -> FqPoint<F> {
         let fp12_chip = Fp12Chip::<F>::new(self.fp_chip);
-        let gt_chip = EccChip::new(&fp12_chip);
-        let neg_signature = g2_chip.negate(ctx, &signature);
-        // TODO: negate G1 instead of signature
-        // let neg_g1 = g1_chip.negate(ctx, &g1);
 
         let multi_paired = self
             .pairing_chip
-            .multi_miller_loop(ctx, vec![(&g1, &neg_signature), (&pubkey, &msghash)]);
-        let res = fp12_chip.final_exp(ctx, multi_paired);
- 
-        res
+            .multi_miller_loop(ctx, vec![(&g1_neg, &signature), (&pubkey, &msghash)]);
+
+        fp12_chip.final_exp(ctx, multi_paired)
     }
 }
