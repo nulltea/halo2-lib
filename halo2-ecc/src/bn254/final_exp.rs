@@ -346,7 +346,6 @@ impl<'chip, F: PrimeField> Fp12Chip<'chip, F> {
         // y4 = 1/(mx * mx2p)
         let mx_mx2p = self.mul(ctx, &mx, &mx2p);
         let y4 = self.conjugate(ctx, mx_mx2p);
-
         // y6 = 1/(mx3 * mx3p)
         let mx3_mx3p = self.mul(ctx, &mx3, &mx3p);
         let y6 = self.conjugate(ctx, mx3_mx3p);
@@ -378,14 +377,10 @@ impl<'chip, F: PrimeField> Fp12Chip<'chip, F> {
         ctx: &mut Context<F>,
         a: <Self as FieldChip<F>>::FieldPoint,
     ) -> <Self as FieldChip<F>>::FieldPoint {
-        println!("----------easy_part------------");
         // a^{q^6} = conjugate of a
         let f1 = self.conjugate(ctx, a.clone());
         let f2 = self.divide_unsafe(ctx, &f1, a);
-        println!("[circuit] easy_part f2 {:?} ", self.get_assigned_value(&f2.clone().into()));
-        println!("----------END------------");
         let f3 = self.frobenius_map(ctx, &f2, 2);
-
         self.mul(ctx, &f3, &f2)
     }
 
@@ -396,7 +391,6 @@ impl<'chip, F: PrimeField> Fp12Chip<'chip, F> {
         a: <Self as FieldChip<F>>::FieldPoint,
     ) -> <Self as FieldChip<F>>::FieldPoint {
         let f0 = self.easy_part(ctx, a);
-
         let f = self.hard_part_BN(ctx, f0);
         f
     }

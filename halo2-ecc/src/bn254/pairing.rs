@@ -300,7 +300,6 @@ pub fn multi_miller_loop_BN<F: PrimeField>(
     pairs: Vec<(&EcPoint<F, FpPoint<F>>, &EcPoint<F, FqPoint<F>>)>,
     pseudo_binary_encoding: &[i8],
 ) -> FqPoint<F> {
-    println!("[circuit] --------- multi_miller_loop_BN -----------");
     let mut i = pseudo_binary_encoding.len() - 1;
     while pseudo_binary_encoding[i] == 0 {
         i -= 1;
@@ -315,14 +314,6 @@ pub fn multi_miller_loop_BN<F: PrimeField>(
     let mut f = {
         let sparse_f =
             sparse_line_function_equal::<F>(ecc_chip.field_chip(), ctx, pairs[0].1, pairs[0].0);
-        println!(
-            "[circuit] line: {:?}",
-            sparse_f.iter()
-                .filter_map(|e| e
-                    .clone()
-                    .map(|ee| ecc_chip.field_chip().get_assigned_value(&ee.into())))
-                .collect::<Vec<_>>()
-        );
         assert_eq!(sparse_f.len(), 6);
 
         let zero_fp = fp_chip.load_constant(ctx, Fq::zero());
@@ -346,16 +337,12 @@ pub fn multi_miller_loop_BN<F: PrimeField>(
     for &(a, b) in pairs.iter().skip(1) {
         f = fp12_multiply_with_line_equal::<F>(ecc_chip.field_chip(), ctx, &f, b, a);
     }
+
     i -= 1;
-    let mut j = 0;
     let mut r = pairs.iter().map(|pair| pair.1.clone()).collect::<Vec<_>>();
     let fp12_chip = Fp12Chip::<F>::new(fp_chip);
-    println!("i: {}, last_index: {}", i, last_index);
-    println!("pseudo_binary_encoding: {:?}", pseudo_binary_encoding[i-1]);
     loop {
-        println!("i = {}", i);
         if i != last_index - 1 {
-            println!("squaring f");
             f = fp12_chip.mul(ctx, &f, &f);
             for (r, &(a, _)) in r.iter().zip(pairs.iter()) {
                 f = fp12_multiply_with_line_equal::<F>(ecc_chip.field_chip(), ctx, &f, r, a);
@@ -363,37 +350,12 @@ pub fn multi_miller_loop_BN<F: PrimeField>(
         }
         for r in r.iter_mut() {
             *r = ecc_chip.double(ctx, r.clone());
-
-            if j < 2 {
-                println!(
-                    "[circuit] r double: ({:?} {:?})",
-                    ecc_chip.field_chip().get_assigned_value(&r.x.clone().into()),
-                    ecc_chip.field_chip().get_assigned_value(&r.y.clone().into())
-                );
-            }
         }
 
         assert!(pseudo_binary_encoding[i] <= 1 && pseudo_binary_encoding[i] >= -1);
         if pseudo_binary_encoding[i] != 0 {
             for ((r, neg_b), &(a, b)) in r.iter_mut().zip(neg_b.iter()).zip(pairs.iter()) {
                 let sign_b = if pseudo_binary_encoding[i] == 1 { b } else { neg_b };
-                // if j < 2 {
-                //     let line = sparse_line_function_unequal::<F>(
-                //         ecc_chip.field_chip(),
-                //         ctx,
-                //         (r, sign_b),
-                //         a,
-                //     );
-                //     println!(
-                //         "[circuit] line: {:?}",
-                //         line.iter()
-                //             .filter_map(|e| e
-                //                 .clone()
-                //                 .map(|ee| ecc_chip.field_chip().get_assigned_value(&ee.into())))
-                //             .collect::<Vec<_>>()
-                //     );
-                // }
-
                 f = fp12_multiply_with_line_unequal::<F>(
                     ecc_chip.field_chip(),
                     ctx,
@@ -402,23 +364,14 @@ pub fn multi_miller_loop_BN<F: PrimeField>(
                     a,
                 );
                 *r = ecc_chip.add_unequal(ctx, r.clone(), sign_b, false);
-                if j < 2 {
-                    println!(
-                        "[circuit] r add: ({:?} {:?})",
-                        ecc_chip.field_chip().get_assigned_value(&r.x.clone().into()),
-                        ecc_chip.field_chip().get_assigned_value(&r.y.clone().into())
-                    );
-                }
             }
         }
         if i == 0 {
             break;
         }
         i -= 1;
-        j += 1;
     }
 
-    println!("[circuit] f <- loop: {:?}", fp12_chip.get_assigned_value(&f.clone().into()).c0.c0,);
     // Frobenius coefficient coeff[1][j] = ((9+u)^{(p-1)/6})^j
     // load coeff[1][2], coeff[1][3]
     let c2 = FROBENIUS_COEFF_FQ12_C1[1] * FROBENIUS_COEFF_FQ12_C1[1];
@@ -434,11 +387,6 @@ pub fn multi_miller_loop_BN<F: PrimeField>(
         *r = ecc_chip.add_unequal(ctx, r.clone(), b_1, false);
         f = fp12_multiply_with_line_unequal::<F>(ecc_chip.field_chip(), ctx, &f, (r, &neg_b_2), a);
     }
-
-    println!("[circuit] f_inv <- end: {:?}", fp12_chip.get_assigned_value(&f.clone().into()));
-    let mut fv = fp12_chip.get_assigned_value(&f.clone().into()).invert().unwrap();
-    fv.conjugate();
-    println!("[circuit] f <- end: {:?}", fv);
     f
 }
 
@@ -589,20 +537,12 @@ impl<'chip, F: PrimeField> PairingChip<'chip, F> {
         T: &EcPoint<F, FqPoint<F>>,
         S: &EcPoint<F, FpPoint<F>>,
     ) {
-        println!("--------- start circuit -----------");
         let ecc_chip_fp = EccChip::new(self.fp_chip);
         let negated_P = ecc_chip_fp.negate(ctx, P);
         let mml = self.multi_miller_loop(ctx, vec![(&negated_P, Q), (S, T)]);
         let fp12_chip = Fp12Chip::<F>::new(self.fp_chip);
-        // let fe = fp12_chip.final_exp(ctx, mml.clone());
-
-        // println!(
-        //     "[circuit] input {:?} [circuit] final_exponentiation: {:?}",
-        //     fp12_chip.get_assigned_value(&mml.into()),
-        //     fp12_chip.get_assigned_value(&fe.clone().into())
-        // );
-        // let fp12_one = fp12_chip.load_constant(ctx, Fq12::one());
-        // fp12_chip.assert_equal(ctx, fe, fp12_one);
-        println!("--------- end circuit -----------");
+        let fe = fp12_chip.final_exp(ctx, mml);
+        let fp12_one = fp12_chip.load_constant(ctx, Fq12::one());
+        fp12_chip.assert_equal(ctx, fe, fp12_one);
     }
 }

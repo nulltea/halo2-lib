@@ -1,4 +1,4 @@
-use super::pairing::{fq2_mul_by_nonresidue, permute_vector};
+use super::pairing::fq2_mul_by_nonresidue;
 use super::{Fp12Chip, Fp2Chip, FpChip, FqPoint};
 use crate::halo2_proofs::arithmetic::Field;
 use crate::{
@@ -292,23 +292,20 @@ impl<'chip, F: PrimeField> Fp12Chip<'chip, F> {
         // a^{q^6} = conjugate of a
         let f1 = self.conjugate(ctx, a.clone());
         let f2 = self.divide_unsafe(ctx, &f1, a);
-        println!("[circuit] final_exp f2 = {:?}", self.get_assigned_value(&f2.clone().into()));
         let f3 = self.frobenius_map(ctx, &f2, 2);
-        // self.mul(ctx, &f3, &f2)
-        let t2 = self.mul(ctx, &f3, &f2);
 
+        let t2 = self.mul(ctx, &f3, &f2);
         let t1: FieldVector<crate::bigint::ProperCrtUint<F>> = {
             let tv = self.cyclotomic_square(ctx, &self.cyclotomic_compress(&t2));
             let tv = self.cyclotomic_decompress(ctx, tv);
             self.conjugate(ctx, tv)
         };
-
         let t3 = self.cyclotomic_pow(ctx, t2.clone(), BLS_X);
-
         let t4 = {
             let tv = self.cyclotomic_square(ctx, &self.cyclotomic_compress(&t3));
             self.cyclotomic_decompress(ctx, tv)
         };
+
         let t5 = self.mul(ctx, &t1, &t3);
         let t1 = self.cyclotomic_pow(ctx, t5.clone(), BLS_X);
         let t0 = self.cyclotomic_pow(ctx, t1.clone(), BLS_X);
@@ -328,6 +325,7 @@ impl<'chip, F: PrimeField> Fp12Chip<'chip, F> {
         let t3 = self.frobenius_map(ctx, &t3, 2);
         let t3 = self.mul(ctx, &t3, &t1);
         let t3 = self.mul(ctx, &t3, &t6);
+
         self.mul(ctx, &t3, &t4)
     }
 }
