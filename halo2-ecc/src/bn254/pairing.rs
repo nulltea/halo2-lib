@@ -377,22 +377,22 @@ pub fn multi_miller_loop_BN<F: PrimeField>(
         if pseudo_binary_encoding[i] != 0 {
             for ((r, neg_b), &(a, b)) in r.iter_mut().zip(neg_b.iter()).zip(pairs.iter()) {
                 let sign_b = if pseudo_binary_encoding[i] == 1 { b } else { neg_b };
-                if j < 2 {
-                    let line = sparse_line_function_unequal::<F>(
-                        ecc_chip.field_chip(),
-                        ctx,
-                        (r, sign_b),
-                        a,
-                    );
-                    println!(
-                        "[circuit] line: {:?}",
-                        line.iter()
-                            .filter_map(|e| e
-                                .clone()
-                                .map(|ee| ecc_chip.field_chip().get_assigned_value(&ee.into())))
-                            .collect::<Vec<_>>()
-                    );
-                }
+                // if j < 2 {
+                //     let line = sparse_line_function_unequal::<F>(
+                //         ecc_chip.field_chip(),
+                //         ctx,
+                //         (r, sign_b),
+                //         a,
+                //     );
+                //     println!(
+                //         "[circuit] line: {:?}",
+                //         line.iter()
+                //             .filter_map(|e| e
+                //                 .clone()
+                //                 .map(|ee| ecc_chip.field_chip().get_assigned_value(&ee.into())))
+                //             .collect::<Vec<_>>()
+                //     );
+                // }
 
                 f = fp12_multiply_with_line_unequal::<F>(
                     ecc_chip.field_chip(),

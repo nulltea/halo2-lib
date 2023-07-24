@@ -205,12 +205,16 @@ impl<'chip, F: PrimeField> BlsSignatureChipTrait<'chip, F> for BlsSignatureChip<
 
         let fp12_chip = Fp12Chip::<F>::new(self.fp_chip);
         let gt_chip = EccChip::new(&fp12_chip);
+        let neg_signature = g2_chip.negate(ctx, &signature);
         // TODO: negate G1 instead of signature
-        let neg_g1 = g1_chip.negate(ctx, &g1);
+        // let neg_g1 = g1_chip.negate(ctx, &g1);
+
+
+        println!("[circuit] g1 = {:?}", (self.fp_chip.get_assigned_value(&g1.x.clone().into()), self.fp_chip.get_assigned_value(&g1.y.clone().into())));
 
         let multi_paired = self
             .pairing_chip
-            .multi_miller_loop(ctx, vec![(&neg_g1, &signature), (&pubkey, &msghash)]);
+            .multi_miller_loop(ctx, vec![(&g1, &neg_signature), (&pubkey, &msghash)]);
         let res = fp12_chip.final_exp(ctx, multi_paired);
         println!("[circuit] final exp res = {:?}", fp12_chip.get_assigned_value(&res.clone().into()));
 
