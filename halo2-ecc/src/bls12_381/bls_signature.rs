@@ -99,19 +99,17 @@ impl<'chip, F: PrimeField> BlsSignatureChip<'chip, F> {
         pubkey: G1Affine,
         msghash: G2Affine,
     ) -> FqPoint<F> {
-        // ) -> halo2_base::AssignedValue<F> {
-
         let g1_assigned = self.pairing_chip.load_private_g1_unchecked(ctx, g1);
         let signature_assigned = self.pairing_chip.load_private_g2_unchecked(ctx, signature);
         let pubkey_assigned = self.pairing_chip.load_private_g1_unchecked(ctx, pubkey);
         let hash_m_assigned = self.pairing_chip.load_private_g2_unchecked(ctx, msghash);
 
         self.verify_signature(
+            ctx,
             signature_assigned,
             hash_m_assigned,
             pubkey_assigned,
             g1_assigned,
-            ctx,
             true,
         )
     }
@@ -180,11 +178,11 @@ impl<'chip, F: PrimeField> BlsSignatureChip<'chip, F> {
 impl<'chip, F: PrimeField> BlsSignatureChipTrait<'chip, F> for BlsSignatureChip<'chip, F> {
     fn verify_signature(
         &self,
+        ctx: &mut Context<F>,
         signature: EcPoint<F, FieldVector<ProperCrtUint<F>>>,
         msghash: EcPoint<F, FieldVector<ProperCrtUint<F>>>,
         pubkey: EcPoint<F, ProperCrtUint<F>>,
         g1: EcPoint<F, ProperCrtUint<F>>,
-        ctx: &mut Context<F>,
         is_strict: bool,
     ) -> FqPoint<F> {
         let g1_chip = EccChip::new(self.fp_chip);
@@ -205,16 +203,16 @@ impl<'chip, F: PrimeField> BlsSignatureChipTrait<'chip, F> for BlsSignatureChip<
 
         let g1_neg = g1_chip.negate(ctx, &g1);
 
-        self.verify_pairing(signature, msghash, pubkey, g1_neg, ctx)
+        self.verify_pairing(ctx, signature, msghash, pubkey, g1_neg)
     }
 
     fn verify_pairing(
         &self,
+        ctx: &mut Context<F>,
         signature: EcPoint<F, FieldVector<ProperCrtUint<F>>>,
         msghash: EcPoint<F, FieldVector<ProperCrtUint<F>>>,
         pubkey: EcPoint<F, ProperCrtUint<F>>,
         g1_neg: EcPoint<F, ProperCrtUint<F>>,
-        ctx: &mut Context<F>,
     ) -> FqPoint<F> {
         let fp12_chip = Fp12Chip::<F>::new(self.fp_chip);
 

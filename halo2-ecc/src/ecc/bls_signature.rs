@@ -10,20 +10,20 @@ pub trait BlsSignatureChip<'chip, F: ScalarField> {
     // G1: {g1, pubkey}, G2: {signature, message}
    fn verify_signature(
         &self,
+        ctx: &mut Context<F>,
         signature: EcPoint<F, FieldVector<ProperCrtUint<F>>>,
         msghash: EcPoint<F, FieldVector<ProperCrtUint<F>>>,
         pubkey: EcPoint<F, ProperCrtUint<F>>,
         g1_gen: EcPoint<F, ProperCrtUint<F>>,
-        ctx: &mut Context<F>,
         is_strict: bool,
     ) -> FieldVector<ProperCrtUint<F>>;
 
     fn verify_pairing(
         &self,
+        ctx: &mut Context<F>,
         signature: EcPoint<F, FieldVector<ProperCrtUint<F>>>,
         msghash: EcPoint<F, FieldVector<ProperCrtUint<F>>>,
         pubkey: EcPoint<F, ProperCrtUint<F>>,
         g1_neg: EcPoint<F, ProperCrtUint<F>>,
-        ctx: &mut Context<F>,
     ) -> FieldVector<ProperCrtUint<F>>;
 }
