@@ -1,6 +1,7 @@
 use std::fmt::Debug;
 use std::marker::PhantomData;
 
+use ff::PrimeField as _;
 use halo2_base::{
     halo2_proofs::halo2curves::bn256::FROBENIUS_COEFF_FQ2_C1, utils::modulus, AssignedValue,
     Context,

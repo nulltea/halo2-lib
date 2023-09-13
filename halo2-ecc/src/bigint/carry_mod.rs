@@ -64,7 +64,6 @@ pub fn crt<F: BigPrimeField>(
     // If quot[i] <= 2^n for i < k - 1 and quot[k-1] <= 2^{n'} then
     // quot < 2^{n(k-1)+1} + 2^{n' + n(k-1)} = (2+2^{n'}) 2^{n(k-1)} < 2^{n'+1} * 2^{n(k-1)} <= 2^{quot_max_bits - n(k-1)} * 2^{n(k-1)}
 
-    
     //println!("{quot_max_bits} - {n} * ({k} - 1)");
     let quot_last_limb_bits = 0; //quot_max_bits - n * (k - 1);
 
@@ -161,7 +160,12 @@ pub fn crt<F: BigPrimeField>(
     // range check that quot_cell in quot_assigned is in [-2^n, 2^n) except for last cell check it's in [-2^quot_last_limb_bits, 2^quot_last_limb_bits)
     for (q_index, quot_cell) in quot_assigned.iter().enumerate() {
         #[allow(clippy::if_same_then_else)]
-        let limb_bits = if q_index == k - 1 { /* quot_last_limb_bits  */ n } else { n };
+        let limb_bits = if q_index == k - 1 {
+            /* quot_last_limb_bits  */
+            n
+        } else {
+            n
+        };
         let limb_base =
             if q_index == k - 1 { range.gate().pow_of_two()[limb_bits] } else { limb_bases[1] };
 

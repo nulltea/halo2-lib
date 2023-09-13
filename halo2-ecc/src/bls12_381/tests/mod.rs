@@ -14,11 +14,11 @@ use crate::halo2_proofs::{
     transcript::{Blake2bRead, Blake2bWrite, Challenge255},
     transcript::{TranscriptReadBuffer, TranscriptWriterBuffer},
 };
-use halo2curves::bls12_381::{pairing, Bls12_381, Fr, G1Affine};
 use crate::{ecc::EccChip, fields::PrimeField};
 use ark_std::{end_timer, start_timer};
 use group::Curve;
 use halo2_base::utils::fe_to_biguint;
+use halo2curves::bls12_381::{pairing, Bls12_381, Fr, G1Affine};
 use serde::{Deserialize, Serialize};
 use std::io::Write;
 

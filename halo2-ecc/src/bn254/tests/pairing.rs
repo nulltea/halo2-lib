@@ -1,6 +1,7 @@
 use std::{
     fs::{self, File},
-    io::{BufRead, BufReader}, ops::Neg,
+    io::{BufRead, BufReader},
+    ops::Neg,
 };
 
 use super::*;
@@ -51,7 +52,8 @@ fn pairing_check_test<F: PrimeField>(
     let gt = halo2curves::bn256::multi_miller_loop(&[
         (
             &halo2curves::bn256::G1Affine::from_bytes(&P.to_bytes().as_ref().try_into().unwrap())
-                .unwrap().neg(),
+                .unwrap()
+                .neg(),
             &G2Prepared::from_affine(
                 halo2curves::bn256::G2Affine::from_bytes(
                     &Q.clone().to_bytes().as_ref().try_into().unwrap(),

@@ -7,6 +7,7 @@ use crate::{
     fields::fp12::mul_no_carry_w6,
     fields::{FieldChip, PrimeField},
 };
+use ff::Field;
 use halo2_base::utils::ScalarField;
 use halo2_base::Context;
 use halo2curves::bls12_381::{Fq2, BLS_X_IS_NEGATIVE};
@@ -302,7 +303,7 @@ pub fn multi_miller_loop<F: PrimeField>(
     }
 
     // skip two bits after init (first beacuse f = 1, second because 1-ft found_one = false)
-    // restrucuture loop to perfrom additiona step for the previous iteration first and then doubling step 
+    // restrucuture loop to perfrom additiona step for the previous iteration first and then doubling step
     for (i, bit) in (0..62).rev().map(|i| (i as usize, ((BLS_X >> i) & 1) == 1)) {
         if prev_bit {
             for (r, &(q, p)) in r.iter_mut().zip(pairs.iter()) {
@@ -749,7 +750,6 @@ fn doubling_step<'chip, F: PrimeField>(
 
     vec![tv0, tv3, tv6]
 }
-
 
 fn permute_vector<T: Clone>(v1: &Vec<T>, indexes: &[usize]) -> Vec<T> {
     indexes.iter().map(|i| v1[*i].clone()).collect()

@@ -5,6 +5,7 @@ members = [
     "hashes/zkevm-keccak",
     "hashes/poseidon"
 ]
+resolver = "2"
 
 [profile.dev]
 opt-level = 3

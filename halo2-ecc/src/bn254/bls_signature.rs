@@ -10,6 +10,7 @@ use crate::halo2_proofs::halo2curves::bn256::{
     Fq, Fq2, G1Affine, G2Affine, BN_X, FROBENIUS_COEFF_FQ12_C1, FROBENIUS_COEFF_FQ2_C1,
 };
 use crate::print_type_of;
+use ff::Field;
 use halo2_base::utils::modulus;
 use halo2_base::Context;
 use num_bigint::BigUint;

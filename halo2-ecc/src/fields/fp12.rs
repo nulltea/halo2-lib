@@ -3,12 +3,12 @@ use std::marker::PhantomData;
 use halo2_base::{utils::modulus, AssignedValue, Context};
 use num_bigint::BigUint;
 
-use crate::impl_field_ext_chip_common;
-
 use super::{
     vector::{FieldVector, FieldVectorChip},
     FieldChip, FieldExtConstructor, PrimeField, PrimeFieldChip,
 };
+use crate::impl_field_ext_chip_common;
+use ff::PrimeField as _;
 
 /// Represent Fp12 point as FqPoint with degree = 12
 /// `Fp12 = Fp2[w] / (w^6 - u - xi)`

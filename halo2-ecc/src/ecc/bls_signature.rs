@@ -1,6 +1,9 @@
-use halo2_base::{Context, utils::ScalarField};
+use halo2_base::{utils::ScalarField, Context};
 
-use crate::{fields::{fp2::Fp2Chip, fp::FpChip, PrimeField, vector::FieldVector}, bigint::ProperCrtUint};
+use crate::{
+    bigint::ProperCrtUint,
+    fields::{fp::FpChip, fp2::Fp2Chip, vector::FieldVector, PrimeField},
+};
 
 use super::EcPoint;
 
@@ -8,7 +11,7 @@ pub trait BlsSignatureChip<'chip, F: ScalarField> {
     // Verifies that e(g1, signature) = e(pubkey, H(m)) by checking e(g1, signature)*e(pubkey, -H(m)) === 1
     // where e(,) is optimal Ate pairing
     // G1: {g1, pubkey}, G2: {signature, message}
-   fn verify_signature(
+    fn verify_signature(
         &self,
         ctx: &mut Context<F>,
         signature: EcPoint<F, FieldVector<ProperCrtUint<F>>>,
