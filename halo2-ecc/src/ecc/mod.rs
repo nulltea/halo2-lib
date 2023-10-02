@@ -16,8 +16,10 @@ use std::marker::PhantomData;
 pub mod ecdsa;
 pub mod fixed_base;
 // pub mod fixed_base_pippenger;
-pub mod pippenger;
 pub mod bls_signature;
+pub mod pippenger;
+
+use ff::Field;
 
 // EcPoint and EccChip take in a generic `FieldChip` to implement generic elliptic curve operations on arbitrary field extensions (provided chip exists) for short Weierstrass curves (currently further assuming a4 = 0 for optimization purposes)
 #[derive(Debug)]
@@ -1027,15 +1029,7 @@ impl<'chip, F: PrimeField, FC: FieldChip<F>> EccChip<'chip, F, FC> {
         FC: Selectable<F, FC::FieldPoint>,
     {
         let max_bits = bits.len();
-        scalar_multiply_bits::<F, FC>(
-            self.field_chip,
-            ctx,
-            P,
-            bits,
-            max_bits,
-            window_bits,
-            true,
-        )
+        scalar_multiply_bits::<F, FC>(self.field_chip, ctx, P, bits, max_bits, window_bits, true)
     }
 }
 

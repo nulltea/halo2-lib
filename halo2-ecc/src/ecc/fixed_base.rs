@@ -9,6 +9,8 @@ use itertools::Itertools;
 use rayon::prelude::*;
 use std::cmp::min;
 
+use ff::Field;
+
 /// Computes `[scalar] * P` on y^2 = x^3 + b where `P` is fixed (constant)
 /// - `scalar` is represented as a non-empty reference array of `AssignedValue`s
 /// - `scalar = sum_i scalar_i * 2^{max_bits * i}`

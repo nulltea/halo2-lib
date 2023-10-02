@@ -7,6 +7,7 @@ use crate::{
     fields::fp12::mul_no_carry_w6,
     fields::{FieldChip, PrimeField},
 };
+use ff::Field;
 use halo2_base::utils::ScalarField;
 use halo2_base::Context;
 use halo2curves::bls12_381::{Fq2, BLS_X_IS_NEGATIVE};

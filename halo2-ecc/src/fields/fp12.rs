@@ -4,7 +4,7 @@ use halo2_base::{utils::modulus, AssignedValue, Context};
 use num_bigint::BigUint;
 
 use crate::impl_field_ext_chip_common;
-
+use ff::PrimeField as _;
 use super::{
     vector::{FieldVector, FieldVectorChip},
     FieldChip, FieldExtConstructor, PrimeField, PrimeFieldChip,
