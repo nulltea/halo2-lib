@@ -21,7 +21,7 @@ ff = "0.12"
 group = "0.12"
 
 halo2-base = { path = "../halo2-base", default-features = false }
-halo2curves = { git = "https://github.com/timoftime/halo2curves", branch = "dev/bls12_381" }
+halo2curves = { git = "https://github.com/sygmaprotocol/halo2curves", branch = "dev/bls12_381" }
 # halo2curves = { path = "../../halo2curves" }
 
 [dev-dependencies]
