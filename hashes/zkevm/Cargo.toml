@@ -19,6 +19,12 @@ rayon = "1.7"
 sha3 = "0.10.8"
 # always included but without features to use Native poseidon
 snark-verifier = { git = "https://github.com/axiom-crypto/snark-verifier.git", branch = "develop", default-features = false }
+snark-verifier-sdk = { git = "https://github.com/axiom-crypto/snark-verifier.git", branch = "community-edition", default-features = false, features = [
+    "display",
+    "loader_halo2",
+    "loader_evm",
+] }
+
 getset = "0.1.2"
 
 [dev-dependencies]
@@ -32,6 +38,7 @@ rand_core = "0.6.4"
 rand_xorshift = "0.3"
 env_logger = "0.10"
 test-case = "3.1.0"
+sha2 = "0.10.7"
 
 [features]
 default = ["halo2-axiom", "display"]
