@@ -17,6 +17,10 @@ pub const fn get_sha2_capacity(num_rows: usize) -> usize {
     num_rows / SHA256_NUM_ROWS
 }
 
+pub fn get_num_sha_f(byte_length: usize) -> usize {
+    byte_length / SHA256_NUM_ROWS
+}
+
 /// Decodes be bits
 pub mod decode {
     use super::{Expression, Field};

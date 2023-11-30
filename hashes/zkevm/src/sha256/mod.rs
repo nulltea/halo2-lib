@@ -8,3 +8,4 @@
 //! to 2^64 - 1.
 
 pub mod vanilla;
+pub mod component;
