@@ -463,6 +463,7 @@ mod tests {
             testing::{check_proof_with_instances, gen_proof_with_instances},
         },
     };
+    use itertools::Itertools;
 
     use super::*;
     use crate::halo2_proofs::{dev::MockProver, halo2curves::bn256::Fr};
