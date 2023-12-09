@@ -170,9 +170,8 @@ impl<'chip, F: BigPrimeField> HashToCurveInstructions<F, Fp2Chip<'chip, F>, G2>
         ctx: &mut Context<F>,
         p: G2Point<F>,
     ) -> G2Point<F> {
-        let mut res = p.clone();
         let p2 = self.double(ctx, &p);
-        res = self.add_unequal(ctx, &p2, &p, false);
+        let mut res = self.add_unequal(ctx, &p2, &p, false);
 
         for i in 1..32 {
             res = self.double(ctx, res);
