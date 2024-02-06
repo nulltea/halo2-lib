@@ -8,7 +8,8 @@ use halo2_base::{
 };
 use itertools::Itertools;
 use num_bigint::BigUint;
-use snark_verifier_sdk::{snark_verifier, NativeLoader};
+use snark_verifier;
+use snark_verifier_sdk::{NativeLoader};
 
 use crate::{
     keccak::vanilla::{keccak_packed_multi::get_num_keccak_f, param::*},

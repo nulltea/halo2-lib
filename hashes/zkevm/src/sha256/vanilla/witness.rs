@@ -99,13 +99,14 @@ impl<F: Field> Sha256CircuitConfig<F> {
         start_offset: usize,
     ) -> Vec<AssignedSha256Block<'v, F>> {
         let virtual_rows = generate_witnesses_multi_sha256(bytes, capacity);
-        self.assign_sha256_rows(region, virtual_rows, start_offset)
+        self.assign_sha256_rows(region, virtual_rows, capacity, start_offset)
     }
 
     pub fn assign_sha256_rows<'v>(
         &self,
         region: &mut Region<'_, F>,
         virtual_rows: Vec<VirtualShaRow>,
+        capacity: Option<usize>,
         start_offset: usize,
     ) -> Vec<AssignedSha256Block<'v, F>> {
         let assigned_rows: Vec<_> = virtual_rows

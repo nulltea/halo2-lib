@@ -2,7 +2,8 @@ use super::{encode::encode_native_input, param::*};
 use crate::{keccak::vanilla::keccak_packed_multi::get_num_keccak_f, util::eth_types::Field};
 use itertools::Itertools;
 use sha3::{Digest, Keccak256};
-use snark_verifier_sdk::{snark_verifier, NativeLoader};
+use snark_verifier;
+use snark_verifier_sdk::{NativeLoader};
 
 /// Witnesses to be exposed as circuit outputs.
 #[derive(Clone, Copy, PartialEq, Debug)]
