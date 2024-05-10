@@ -373,6 +373,8 @@ impl ExpandMessageChip for ExpandMsgXmd {
     ) -> Result<Vec<AssignedValue<F>>, Error> {
         let gate = range.gate();
 
+        assert!(len_in_bytes >= 32, "Expand length must be at least 32 bytes");
+
         let zero = thread_pool.main().load_zero();
         let one = thread_pool.main().load_constant(F::ONE);
 
