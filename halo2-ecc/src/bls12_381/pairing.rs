@@ -56,7 +56,7 @@ pub fn sparse_line_function_unequal<F: BigPrimeField>(
 //  P = (P.x, P.y) in E(Fp2)
 // Output:
 //  line_{Psi(Q), Psi(Q)}(P) where Psi(x,y) = (w^2 x, w^3 y)
-//  - equals (3x^3 - 2y^2)(XI_0 + u) + w^4 (-3 x^2 * Q.x) + w^3 (2 y * Q.y) =: out0 + out4 * w^4 + out3 * w^3 where out0, out3, out4 are Fp2 points
+//  - equals (3x^3 - 2y^2) + w^4 (-3 x^2 * Q.x) + w^3 (2 y * Q.y) =: out0 + out4 * w^4 + out3 * w^3 where out0, out3, out4 are Fp2 points
 // Output is [out0, None, out2, out3, None, None] as vector of `Option<FqPoint>`s
 pub fn sparse_line_function_equal<F: BigPrimeField>(
     fp2_chip: &Fp2Chip<F>,
