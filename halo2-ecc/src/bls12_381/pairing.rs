@@ -18,7 +18,7 @@ use halo2_base::Context;
 // Output:
 //  line_{Psi(Q0), Psi(Q1)}(P) where Psi(x,y) = (w^2 x, w^3 y)
 //  - equals w^3 (y_1 - y_2) X + w^2 (x_2 - x_1) Y + w^5 (x_1 y_2 - x_2 y_1) =: out3 * w^3 + out2 * w^2 + out5 * w^5 where out2, out3, out5 are Fp2 points
-// Output is [None, None, out2, out3, None, out5] as vector of `Option<FqPoint>`s
+// Output is [None, out2, None, out3, out4, None] as vector of `Option<FqPoint>`s
 pub fn sparse_line_function_unequal<F: BigPrimeField>(
     fp2_chip: &Fp2Chip<F>,
     ctx: &mut Context<F>,
