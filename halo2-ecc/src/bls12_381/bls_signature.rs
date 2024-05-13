@@ -38,6 +38,7 @@ impl<'chip, F: BigPrimeField> BlsSignatureChip<'chip, F> {
     }
 
     /// Verifies BLS signature and returns assigned selector.
+    #[must_use]
     pub fn is_valid_signature(
         &self,
         ctx: &mut Context<F>,
