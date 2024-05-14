@@ -375,9 +375,9 @@ impl ExpandMessageChip for ExpandMsgXmd {
         let ell = (len_in_bytes as f64 / HC::DIGEST_SIZE as f64).ceil() as usize;
 
         assert!(len_in_bytes >= 32, "Expand length must be at least 32 bytes");
-        assert!(len_in_bytes < 65535, "abort if len_in_bytes > 65535");
-        assert!(dst.len() < 255, "abort if DST len > 255");
-        assert!(ell < 255, "abort if ell > 255");
+        assert!(len_in_bytes <= 65535, "abort if len_in_bytes > 65535");
+        assert!(dst.len() <= 255, "abort if DST len > 255");
+        assert!(ell <= 255, "abort if ell > 255");
 
         let zero = thread_pool.main().load_zero();
         let one = thread_pool.main().load_constant(F::ONE);
