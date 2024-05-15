@@ -237,7 +237,7 @@ where
         let p1 = self.map_to_curve_simple_swu(ctx, u0);
         let p2 = self.map_to_curve_simple_swu(ctx, u1);
 
-        let p_sum = self.ecc_chip.add_unequal(ctx, p1, p2, false);
+        let p_sum = self.ecc_chip.add_unequal(ctx, p1, p2, true);
 
         let iso_p = self.ecc_chip.isogeny_map(ctx, p_sum);
 
@@ -314,6 +314,7 @@ where
 
     // Implements [Appendix F.2.1 of draft-irtf-cfrg-hash-to-curve-16][sqrt_ration]
     //
+    // Assumption: `num` != 0
     // Warning: `y_assigned` returned value can be sqrt(y_sqr) and -sqrt(y_sqr).
     // The sign of `y_assigned` must be constrainted at the callsite according to the composed algorithm.
     //
@@ -327,6 +328,9 @@ where
         let field_chip = self.ecc_chip.field_chip();
         let num_v = field_chip.get_assigned_value(&num.clone().into());
         let div_v = field_chip.get_assigned_value(&div.clone().into());
+
+        let num_is_zero = field_chip.is_zero(ctx, num.clone());
+        field_chip.gate().assert_is_const(ctx, &num_is_zero, &F::ZERO);
 
         let (is_square, y) = FC::FieldType::sqrt_ratio(&num_v, &div_v);
 
@@ -375,6 +379,12 @@ impl ExpandMessageChip for ExpandMsgXmd {
         len_in_bytes: usize,
     ) -> Result<Vec<AssignedValue<F>>, Error> {
         let gate = range.gate();
+        let ell = (len_in_bytes as f64 / HC::DIGEST_SIZE as f64).ceil() as usize;
+
+        assert!(len_in_bytes >= 32, "Expand length must be at least 32 bytes");
+        assert!(len_in_bytes <= 65535, "abort if len_in_bytes > 65535");
+        assert!(dst.len() <= 255, "abort if DST len > 255");
+        assert!(ell <= 255, "abort if ell > 255");
 
         let zero = thread_pool.main().load_zero();
         let one = thread_pool.main().load_constant(F::ONE);
@@ -395,14 +405,12 @@ impl ExpandMessageChip for ExpandMsgXmd {
         let assigned_msg = msg
             .map(|cell| match cell {
                 QuantumCell::Existing(v) => v,
-                QuantumCell::Witness(v) => thread_pool.main().load_witness(v),
                 QuantumCell::Constant(v) => thread_pool.main().load_constant(v),
-                _ => unreachable!(),
+                _ => panic!("passing unassigned witness to this function is insecure"),
             })
             .collect_vec();
 
         // compute blocks
-        let ell = (len_in_bytes as f64 / HC::DIGEST_SIZE as f64).ceil() as usize;
         let mut b_vals = Vec::with_capacity(ell);
         let msg_prime = z_pad
             .into_iter()
